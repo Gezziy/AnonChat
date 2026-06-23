@@ -3,6 +3,7 @@ import type { AuditEventType } from "@/types/blockchain";
 import { submitAuditEvent } from "@/lib/blockchain/stellar-service";
 import { getExplorerUrl, loadStellarConfig } from "@/lib/blockchain/stellar-config";
 import { logBlockchainOperation, generateCorrelationId } from "@/lib/blockchain/logger";
+import { verifyStellarTransaction } from "@/lib/blockchain/transaction-verification";
 
 type SupabaseErrorLike = { message: string };
 type SupabaseMutationResult = PromiseLike<{ error: SupabaseErrorLike | null }>;
@@ -93,58 +94,67 @@ export async function recordGroupAuditEvent({
   };
   const metadataHash = computeAuditMetadataHash(eventMetadata);
 
-  const { error: insertError } = await supabase
-    .from("group_audit_events")
-    .insert({
-      event_id: eventId,
-      group_id: groupId,
-      event_type: eventType,
-      actor_user_id: actorUserId ?? null,
-      target_user_id: targetUserId ?? null,
-      status: "pending",
-      metadata: eventMetadata,
-      metadata_hash: metadataHash,
-      created_at: occurredAt,
-    });
-
-  if (insertError) {
-    logBlockchainOperation("error", "Failed to persist audit event before submission", {
-      groupId,
-      eventId,
-      eventType,
-      error: {
-        type: "DatabaseError",
-        message: insertError.message,
-      },
-    }, correlationId);
-    return null;
-  }
-
   const result = await submitAuditEvent(groupId, eventId, eventType, metadataHash, maxFee);
 
   if (result.success && result.transactionHash) {
-    const { error: updateError } = await supabase
+    const verification = await verifyStellarTransaction({
+      supabase: supabase as any,
+      transactionHash: result.transactionHash,
+      groupActionEventId: eventId,
+      groupId,
+      expectedMemo: result.auditMemo ?? null,
+    });
+
+    if (!verification.verified) {
+      logBlockchainOperation("warn", "Rejecting group audit event after failed transaction verification", {
+        groupId,
+        eventId,
+        eventType,
+        transactionHash: result.transactionHash,
+        status: verification.status,
+        error: verification.error,
+      }, correlationId);
+
+      return {
+        eventId,
+        eventType,
+        transactionHash: result.transactionHash,
+        status: "failed",
+        explorerUrl: getAuditExplorerUrl(result.transactionHash),
+        error: verification.error ?? "Stellar transaction verification failed",
+      };
+    }
+
+    const { error: insertError } = await supabase
       .from("group_audit_events")
-      .update({
+      .insert({
+        event_id: eventId,
+        group_id: groupId,
+        event_type: eventType,
+        actor_user_id: actorUserId ?? null,
+        target_user_id: targetUserId ?? null,
         status: "submitted",
         transaction_hash: result.transactionHash,
         stellar_memo: result.auditMemo ?? null,
+        metadata: eventMetadata,
+        metadata_hash: metadataHash,
+        created_at: occurredAt,
         submitted_at: new Date().toISOString(),
         error_message: null,
-      })
-      .eq("event_id", eventId);
+      });
 
-    if (updateError) {
-      logBlockchainOperation("warn", "Audit transaction submitted but database update failed", {
+    if (insertError) {
+      logBlockchainOperation("error", "Audit transaction verified but database insert failed", {
         groupId,
         eventId,
         eventType,
         transactionHash: result.transactionHash,
         error: {
           type: "DatabaseError",
-          message: updateError.message,
+          message: insertError.message,
         },
       }, correlationId);
+      return null;
     }
 
     return {
@@ -158,14 +168,17 @@ export async function recordGroupAuditEvent({
   }
 
   const errorMessage = result.error ?? "Audit transaction failed";
-  await supabase
-    .from("group_audit_events")
-    .update({
-      status: "failed",
-      stellar_memo: result.auditMemo ?? null,
-      error_message: errorMessage,
-    })
-    .eq("event_id", eventId);
+  await supabase.from("stellar_transaction_verifications").insert({
+    transaction_hash: result.transactionHash ?? null,
+    group_action_event_id: eventId,
+    group_id: groupId,
+    status: "failed",
+    verified: false,
+    ledger: null,
+    memo: result.auditMemo ?? null,
+    error_message: errorMessage,
+    verified_at: new Date().toISOString(),
+  });
 
   return {
     eventId,

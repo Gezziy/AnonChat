@@ -32,6 +32,28 @@ export interface StellarTransaction {
   memo: string;
   ledger: number;
   created_at: string;
+  successful: boolean;
+  source_account?: string;
+  operation_count?: number;
+}
+
+export type StellarTransactionVerificationStatus =
+  | "successful"
+  | "failed"
+  | "pending"
+  | "invalid";
+
+export interface StellarTransactionVerificationResult {
+  transactionHash: string;
+  status: StellarTransactionVerificationStatus;
+  verified: boolean;
+  groupActionEventId: string | null;
+  groupId: string | null;
+  ledger: number | null;
+  memo: string | null;
+  error: string | null;
+  verifiedAt: string;
+  explorerUrl: string | null;
 }
 
 export interface VerificationResponse {

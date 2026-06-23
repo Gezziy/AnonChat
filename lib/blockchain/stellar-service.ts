@@ -347,6 +347,9 @@ export async function getTransaction(txHash: string): Promise<StellarTransaction
       memo: transaction.memo || "",
       ledger: transaction.ledger_attr,
       created_at: transaction.created_at,
+      successful: Boolean(transaction.successful),
+      source_account: transaction.source_account,
+      operation_count: transaction.operation_count,
     };
   } catch (error: any) {
     logBlockchainOperation("error", "Failed to retrieve transaction", {
