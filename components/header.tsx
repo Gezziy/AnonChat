@@ -7,6 +7,7 @@ import ConnectWallet from "./wallet-connector"
 import { ThemeToggle } from "./theme-toggle"
 import { CreateGroupModal } from "./create-group-modal"
 import { JoinGroupModal } from "./join-group-modal"
+import { StellarNetworkStatus } from "@/components/stellar-network-status";
 
 export function Header() {
   const [isOpen, setIsOpen] = useState(false)
@@ -49,6 +50,7 @@ export function Header() {
         {/* CTA Buttons */}
         <div className="hidden md:flex items-center gap-3">
           <ThemeToggle />
+          <StellarNetworkStatus variant="compact" />
           <CreateGroupModal />
           <JoinGroupModal />
           {/* Connect Wallet button  */}
