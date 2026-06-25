@@ -112,7 +112,7 @@ export async function recordGroupAuditEvent({
         eventType,
         transactionHash: result.transactionHash,
         status: verification.status,
-        error: verification.error,
+        error: verification.error ? { type: "VerificationError", message: verification.error } : undefined,
       }, correlationId);
 
       return {
