@@ -11,8 +11,14 @@ import {
   generateCorrelationId,
 } from "@/lib/blockchain/logger";
 import { recordGroupAuditEvent } from "@/lib/blockchain/audit";
+import {
+  evaluateGroupVerification,
+  toVerificationRecord,
+} from "@/lib/blockchain/group-verification";
+import { getTransaction } from "@/lib/blockchain/stellar-service";
 import { insertRoomActivity } from "@/lib/activity/room-activity";
 import { type SupabaseClient } from "@supabase/supabase-js";
+import { persistGroupTransactionMemo } from "@/lib/blockchain/memo-store";
 
 export async function GET(request: NextRequest) {
   try {
@@ -199,13 +205,14 @@ export async function POST(request: NextRequest) {
 
         // Persist the groupId <-> transactionId mapping for fast lookups
         if (result.memoGroupId) {
-          const { error: memoInsertError } = await supabase
-            .from("group_tx_memos")
-            .insert({
-              group_id: room.id,
-              memo_group_id: result.memoGroupId,
-              tx_hash: stellarTxHash,
-            });
+          const { error: memoInsertError } = await persistGroupTransactionMemo(
+            supabase as unknown as SupabaseClient,
+            {
+              groupId: room.id,
+              memoGroupId: result.memoGroupId,
+              txHash: stellarTxHash,
+            },
+          );
 
           if (memoInsertError) {
             // Non-fatal: log but don't fail the request
@@ -236,6 +243,38 @@ export async function POST(request: NextRequest) {
           },
           correlationId,
         );
+
+        const transaction = await getTransaction(stellarTxHash);
+        const verification = evaluateGroupVerification(
+          {
+            ...room,
+            stellar_tx_hash: stellarTxHash,
+            metadata_hash: metadataHash,
+            memo_group_id: result.memoGroupId ?? null,
+          },
+          transaction,
+        );
+
+        const { error: verificationError } = await supabase
+          .from("group_verifications")
+          .upsert(toVerificationRecord(room.id, verification), {
+            onConflict: "group_id",
+          });
+
+        if (verificationError) {
+          logBlockchainOperation(
+            "warn",
+            "Failed to persist group_verifications record after creation",
+            {
+              groupId: room.id,
+              error: {
+                type: "DatabaseError",
+                message: verificationError.message,
+              },
+            },
+            correlationId,
+          );
+        }
       } else {
         logBlockchainOperation(
           "warn",

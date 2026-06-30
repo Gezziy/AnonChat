@@ -1,25 +1,17 @@
 import * as StellarSdk from "@stellar/stellar-sdk";
-import { StellarTransactionResult, StellarTransaction } from "@/types/blockchain";
+import {
+  AuditEventType,
+  StellarTransactionResult,
+  StellarTransaction,
+} from "@/types/blockchain";
 import { loadStellarConfig, isConfigured, getExplorerUrl } from "./stellar-config";
 import { logBlockchainOperation, generateCorrelationId } from "./logger";
 import { deriveMemoGroupId, validateMemoGroupId, STELLAR_MEMO_MAX_BYTES } from "./memo";
 
-const AUDIT_EVENT_CODES = {
-  group_created: "c",
-  member_joined: "j",
-  member_left: "l",
-  member_removed: "r",
-} as const;
-
-function buildAuditMemo(eventId: string, eventType: keyof typeof AUDIT_EVENT_CODES): string {
-  const compactId = eventId.replace(/-/g, "").slice(0, 21);
-  return `aca_${AUDIT_EVENT_CODES[eventType]}_${compactId}`;
-}
-
 /**
  * Submits a metadata hash to the Stellar blockchain.
  *
- * The Stellar TEXT memo embeds the group's compact identifier (≤28 bytes)
+ * The Stellar TEXT memo embeds the group's compact identifier
  * so that every on-chain transaction is traceable back to a specific group.
  * The metadata hash is stored in the DB for integrity verification; the memo
  * carries the group reference that can be validated independently on-chain.
@@ -79,7 +71,7 @@ export async function submitMetadataHash(
       ),
     ]);
 
-    // Derive the group memo from the room ID (≤28 bytes, "grp_<slug>" format).
+    // Derive the group memo from the room ID.
     // This embeds the group reference directly in the on-chain transaction so
     // it can be validated independently without querying the database.
     const memoGroupId = deriveMemoGroupId(groupId);
@@ -120,7 +112,7 @@ export async function submitMetadataHash(
           amount: "0.0000001", // Minimal amount
         })
       )
-      // Embed the group identifier — not the hash — so the memo is a stable,
+      // Embed the group identifier, not the hash, so the memo is a stable,
       // human-readable group reference that survives metadata changes.
       .addMemo(StellarSdk.Memo.text(memoGroupId))
       .setTimeout(30)
@@ -180,15 +172,14 @@ export async function submitMetadataHash(
 /**
  * Submits an immutable audit marker to Stellar.
  *
- * Stellar TEXT memos are limited to 28 bytes, so the memo stores a compact
- * audit-event reference: "aca_<event-code>_<event-id-prefix>". The complete
- * event payload, metadata hash, transaction hash, and memo are stored in
+ * The Stellar TEXT memo stores the group's compact identifier. The complete
+ * audit event payload, metadata hash, transaction hash, and memo are stored in
  * Supabase for fast lookup and verification.
  */
 export async function submitAuditEvent(
   groupId: string,
   eventId: string,
-  eventType: keyof typeof AUDIT_EVENT_CODES,
+  eventType: AuditEventType,
   metadataHash: string,
   maxFee?: string | number
 ): Promise<StellarTransactionResult> {
@@ -218,11 +209,12 @@ export async function submitAuditEvent(
     };
   }
 
-  const auditMemo = buildAuditMemo(eventId, eventType);
-  if (Buffer.byteLength(auditMemo, "utf8") > STELLAR_MEMO_MAX_BYTES) {
+  const auditMemo = deriveMemoGroupId(groupId);
+  const memoValidation = validateMemoGroupId(auditMemo);
+  if (!memoValidation.valid) {
     return {
       success: false,
-      error: "Audit memo exceeds Stellar memo limit",
+      error: `Audit memo validation failed: ${memoValidation.reason}`,
     };
   }
 
@@ -345,6 +337,7 @@ export async function getTransaction(txHash: string): Promise<StellarTransaction
     return {
       hash: transaction.hash,
       memo: transaction.memo || "",
+      memoType: (transaction as any).memo_type,
       ledger: transaction.ledger_attr,
       created_at: transaction.created_at,
     };

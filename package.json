@@ -12,7 +12,10 @@
     "dev:all": "concurrently \"npm run dev\" \"npm run dev:ws\"",
     "dev:cleanup": "node scripts/ephemeral-cleanup-worker.js",
     "lint": "eslint . --ext .ts,.tsx,.js,.jsx",
+    "test:unit": "vitest run",
     "test": "node scripts/verify-websocket.js",
+    "test:wallet-auth": "node --test scripts/test-wallet-authorization.mjs",
+    "test:sensitive-actions": "node scripts/test-sensitive-actions-api.mjs",
     "test:vote-remove": "node scripts/test-vote-remove-api.mjs",
     "test:ephemeral": "node scripts/test-ephemeral-cleanup.mjs",
     "start": "next start",
@@ -94,11 +97,14 @@
     "eslint": "^10.0.2",
     "eslint-config-next": "^16.1.6",
     "fast-check": "^4.5.3",
+    "happy-dom": "^17.4.4",
+    "@testing-library/react": "^16.3.0",
     "postcss": "^8.5",
     "tailwindcss": "^4.1.9",
     "tw-animate-css": "1.3.3",
     "typescript": "^5.9.3",
-    "ws": "^8.19.0"
+    "ws": "^8.19.0",
+    "vitest": "^3.2.4"
   },
   "optionalDependencies": {
     "lightningcss-darwin-x64": "^1.30.2"

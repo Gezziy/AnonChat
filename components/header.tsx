@@ -4,10 +4,10 @@ import Link from "next/link"
 import { Menu, X } from "lucide-react"
 import { useState } from "react"
 import ConnectWallet from "./wallet-connector"
-import { ThemeToggle } from "./theme-toggle"
+import { ThemeSettingsModal } from "./theme-settings-modal"
 import { CreateGroupModal } from "./create-group-modal"
 import { JoinGroupModal } from "./join-group-modal"
-import { StellarNetworkStatus } from "@/components/stellar-network-status";
+import { NotificationPanel } from "./NotificationPanel"
 
 export function Header() {
   const [isOpen, setIsOpen] = useState(false)
@@ -49,8 +49,8 @@ export function Header() {
 
         {/* CTA Buttons */}
         <div className="hidden md:flex items-center gap-3">
-          <ThemeToggle />
-          <StellarNetworkStatus variant="compact" />
+          <ThemeSettingsModal />
+          <NotificationPanel />
           <CreateGroupModal />
           <JoinGroupModal />
           {/* Connect Wallet button  */}
@@ -96,7 +96,11 @@ export function Header() {
             <div className="pt-3 border-t border-border/50 space-y-2">
               <div className="flex items-center justify-between px-2">
                 <span className="text-sm text-muted-foreground font-medium">Theme</span>
-                <ThemeToggle />
+                <ThemeSettingsModal />
+              </div>
+              <div className="flex items-center justify-between px-2">
+                <span className="text-sm text-muted-foreground font-medium">Notifications</span>
+                <NotificationPanel />
               </div>
               <div className="flex flex-col gap-2">
                 <CreateGroupModal />

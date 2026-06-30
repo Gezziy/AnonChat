@@ -147,6 +147,29 @@ export async function recordGroupAuditEvent({
       }, correlationId);
     }
 
+    if (result.auditMemo) {
+      const { error: memoInsertError } = await supabase
+        .from("group_tx_memos")
+        .insert({
+          group_id: groupId,
+          memo_group_id: result.auditMemo,
+          tx_hash: result.transactionHash,
+        });
+
+      if (memoInsertError) {
+        logBlockchainOperation("warn", "Audit transaction memo mapping failed", {
+          groupId,
+          eventId,
+          eventType,
+          transactionHash: result.transactionHash,
+          error: {
+            type: "DatabaseError",
+            message: memoInsertError.message,
+          },
+        }, correlationId);
+      }
+    }
+
     return {
       eventId,
       eventType,

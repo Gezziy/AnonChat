@@ -178,5 +178,8 @@ export function useWebSocketSend() {
     markAsDelivered: useCallback((messageId: string, roomId: string) => {
       client.current.markAsDelivered(messageId, roomId);
     }, []),
+    editMessage: useCallback((messageId: string, roomId: string, content: string) => {
+      return client.current.editMessage(messageId, roomId, content);
+    }, []),
   };
 }

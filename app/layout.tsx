@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import { ThemeProvider } from "@/components/theme-provider";
+import { ChatThemeProvider } from "@/lib/chat-theme";
 import { WebSocketProvider } from "@/lib/websocket/context"
 
 // installed the proper toast module
@@ -51,9 +52,11 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <WebSocketProvider>
-            {children}
-          </WebSocketProvider>
+          <ChatThemeProvider>
+            <WebSocketProvider>
+              {children}
+            </WebSocketProvider>
+          </ChatThemeProvider>
         </ThemeProvider>
         <Analytics />
 
