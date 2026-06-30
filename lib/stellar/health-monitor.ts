@@ -43,10 +43,6 @@ let activeOutage: OutageEvent | null = null;
 let pollTimer: NodeJS.Timeout | null = null;
 let listeners: Set<(result: HealthCheckResult) => void> = new Set();
 
-function generateEventId(): string {
-  return `outage_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-}
-
 function logOutage(event: OutageEvent, action: "started" | "ended" | "updated"): void {
   logBlockchainOperation(
     action === "started" ? "error" : action === "ended" ? "info" : "warn",
@@ -55,7 +51,9 @@ function logOutage(event: OutageEvent, action: "started" | "ended" | "updated"):
       outageId: event.id,
       status: event.status,
       durationMs: event.durationMs,
-      error: event.error,
+      error: event.error
+        ? { type: "StellarNetworkError", message: event.error }
+        : undefined,
     }
   );
 }
