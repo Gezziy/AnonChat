@@ -345,7 +345,7 @@ export async function getTransaction(txHash: string): Promise<StellarTransaction
     return {
       hash: transaction.hash,
       memo: transaction.memo || "",
-      ledger: transaction.ledger_attr,
+      ledger: transaction.ledger,
       created_at: transaction.created_at,
       successful: Boolean(transaction.successful),
       source_account: transaction.source_account,

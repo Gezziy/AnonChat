@@ -1,4 +1,3 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   getTransaction,
   getTransactionExplorerUrl,
@@ -13,7 +12,13 @@ import type {
   StellarTransactionVerificationStatus,
 } from "@/types/blockchain";
 
-type SupabaseInsertable = Pick<SupabaseClient, "from">;
+type SupabaseErrorLike = { message: string };
+type SupabaseInsertResult = PromiseLike<{ error: SupabaseErrorLike | null }>;
+type SupabaseInsertable = {
+  from: (table: string) => {
+    insert: (values: Record<string, unknown>) => SupabaseInsertResult;
+  };
+};
 
 export type VerifyStellarTransactionInput = {
   supabase?: SupabaseInsertable;
