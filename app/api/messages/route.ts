@@ -109,6 +109,79 @@ export async function PATCH(request: NextRequest) {
   }
 }
 
+export async function PUT(request: NextRequest) {
+  try {
+    const supabase = await createClient()
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    const body = await request.json()
+    const { id, content, editWindowMinutes } = body
+
+    if (!id || typeof content !== "string") {
+      return NextResponse.json({ error: "id and content are required" }, { status: 400 })
+    }
+
+    const windowMinutes = Number(editWindowMinutes ?? process.env.MESSAGE_EDIT_WINDOW_MINUTES ?? 5)
+    const windowMs = windowMinutes * 60 * 1000
+
+    const { data: existing, error: fetchErr } = await supabase
+      .from("messages")
+      .select("id, user_id, created_at")
+      .eq("id", id)
+      .maybeSingle()
+
+    if (fetchErr) throw fetchErr
+    if (!existing) {
+      return NextResponse.json({ error: "Message not found" }, { status: 404 })
+    }
+
+    if (existing.user_id !== user.id) {
+      return NextResponse.json({ error: "Forbidden. You can only edit your own messages." }, { status: 403 })
+    }
+
+    const createdAt = new Date(existing.created_at as string).getTime()
+    const now = Date.now()
+    const elapsedMs = now - createdAt
+
+    if (elapsedMs < 0 || elapsedMs > windowMs) {
+      return NextResponse.json(
+        {
+          error: "Edit window expired",
+          code: "EDIT_WINDOW_EXPIRED",
+          elapsedMs,
+          windowMs,
+        },
+        { status: 403 },
+      )
+    }
+
+    const { data, error } = await supabase
+      .from("messages")
+      .update({
+        content,
+        edited_at: new Date(now).toISOString(),
+      })
+      .eq("id", id)
+      .select()
+
+    if (error) throw error
+    if (!data || data.length === 0) {
+      return NextResponse.json({ error: "Failed to update message" }, { status: 500 })
+    }
+
+    return NextResponse.json({ message: data[0], success: true })
+  } catch (error) {
+    console.error("[v0] PUT /api/messages error:", error)
+    return NextResponse.json({ error: "Failed to edit message" }, { status: 500 })
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()

@@ -77,6 +77,57 @@ export function createWebSocketServer(port: number = 3001) {
     })
   }
 
+  function setupNotificationBridge(httpServer: http.Server) {
+    httpServer.on("request", (req: http.IncomingMessage, res: http.ServerResponse) => {
+      if (req.method !== "POST" || req.url !== "/notify") {
+        res.writeHead(404, { "Content-Type": "application/json" })
+        res.end(JSON.stringify({ error: "Not found" }))
+        return
+      }
+
+      const secret = process.env.WS_NOTIFY_SECRET || "dev-notify-secret"
+      const authHeader = req.headers.authorization
+      if (authHeader !== `Bearer ${secret}`) {
+        res.writeHead(401, { "Content-Type": "application/json" })
+        res.end(JSON.stringify({ error: "Unauthorized" }))
+        return
+      }
+
+      let body = ""
+      req.on("data", (chunk: Buffer) => {
+        body += chunk
+      })
+
+      req.on("end", () => {
+        try {
+          const parsed = JSON.parse(body) as {
+            userId?: string
+            notification?: Record<string, unknown>
+          }
+
+          if (!parsed.userId || !parsed.notification) {
+            res.writeHead(400, { "Content-Type": "application/json" })
+            res.end(JSON.stringify({ error: "userId and notification are required" }))
+            return
+          }
+
+          sendToUser(parsed.userId, {
+            type: "notification",
+            payload: parsed.notification,
+            timestamp: Date.now(),
+          })
+
+          res.writeHead(200, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ delivered: true }))
+        } catch (error) {
+          console.error("[WebSocket] Notification bridge error:", error)
+          res.writeHead(400, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ error: "Invalid request body" }))
+        }
+      })
+    })
+  }
+
   function getPresenceSnapshot() {
     return Array.from(userPresence.values()).map((presence) => ({
       userId: presence.userId,
@@ -361,6 +412,69 @@ export function createWebSocketServer(port: number = 3001) {
             break
           }
 
+          case "edit_message": {
+            const editRoomId = message.payload.roomId
+            const editMessageId = message.payload.messageId
+            const editContent = message.payload.content
+            const editAuthorId = connection.userId
+
+            if (!editRoomId || !editMessageId || !editContent || !editAuthorId) {
+              ws.send(
+                JSON.stringify({
+                  type: "error",
+                  payload: { message: "Invalid edit request" },
+                  timestamp: Date.now(),
+                }),
+              )
+              break
+            }
+
+            broadcastToRoom(editRoomId, {
+              type: "message_edit",
+              payload: {
+                messageId: editMessageId,
+                userId: editAuthorId,
+                roomId: editRoomId,
+                content: editContent,
+                editedAt: Date.now(),
+              },
+              timestamp: Date.now(),
+            })
+            break
+          }
+
+          case "message_read": {
+            const readRoomId = message.payload.roomId
+            const readMessageId = message.payload.messageId
+            const readUserId = connection.userId
+
+            if (!readUserId) {
+              ws.send(
+                JSON.stringify({
+                  type: "error",
+                  payload: { message: "Not authenticated" },
+                  timestamp: Date.now(),
+                }),
+              )
+              break
+            }
+
+            // Broadcast read receipt to the room
+            // The actual read receipt will be persisted to the database via the REST API
+            broadcastToRoom(readRoomId, {
+              type: "message_read_receipt",
+              payload: {
+                messageId: readMessageId,
+                userId: readUserId,
+                displayName: connection.user?.displayName,
+                readAt: Date.now(),
+                roomId: readRoomId,
+              },
+              timestamp: Date.now(),
+            })
+            break
+          }
+
           case "typing": {
             const typingRoomId = message.payload.roomId
 
@@ -443,6 +557,8 @@ export function createWebSocketServer(port: number = 3001) {
       cleanupClient(clientId)
     })
   })
+
+  setupNotificationBridge(server)
 
   server.listen(port, () => {
     console.log(`[WebSocket Server] Running on ws://localhost:${port}`)

@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
 import { createClient } from "@/lib/supabase/client";
 import { WalletAddress } from "@/components/wallet-address";
+import { ProfileDrawer } from "@/components/profile-drawer";
 import { WalletSelectionModal } from "@/components/wallet-selection-modal";
 import { handleAppError } from "@/lib/error-handler";
 
@@ -175,9 +176,9 @@ export default function ConnectWallet() {
   return (
     <div id="connect-wrap" className="wrap" aria-live="polite">
       {!loading && publicKey && (
-        <div className="flex gap-5">
+        <ProfileDrawer publicKey={publicKey} onDisconnect={handleDisconnect}>
           <div
-            className="ellipsis bg-linear-to-r from-primary to-accent p-2 rounded-2xl"
+            className="ellipsis cursor-pointer bg-linear-to-r from-primary to-accent p-2 rounded-2xl"
             title={publicKey}
           >
             <WalletAddress
@@ -186,13 +187,7 @@ export default function ConnectWallet() {
               addressClassName="text-primary-foreground"
             />
           </div>
-          <button
-            className="bg-linear-to-r from-primary/50 to-accent/70 p-2 rounded-xl h-10 px-4 self-center transition-opacity hover:opacity-80"
-            onClick={handleDisconnect}
-          >
-            Disconnect
-          </button>
-        </div>
+        </ProfileDrawer>
       )}
 
       {!loading && !publicKey && (

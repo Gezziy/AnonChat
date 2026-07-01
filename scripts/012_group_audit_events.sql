@@ -29,7 +29,9 @@ create index if not exists group_audit_events_tx_hash_idx
   on public.group_audit_events(transaction_hash)
   where transaction_hash is not null;
 
-create unique index if not exists group_audit_events_stellar_memo_idx
+drop index if exists public.group_audit_events_stellar_memo_idx;
+
+create index if not exists group_audit_events_stellar_memo_idx
   on public.group_audit_events(stellar_memo)
   where stellar_memo is not null;
 
@@ -71,8 +73,8 @@ create policy "Authenticated actors can update their audit events"
 comment on table public.group_audit_events is
   'On-chain audit trail mapping group events to Stellar transaction hashes';
 comment on column public.group_audit_events.event_id is
-  'Stable audit event identifier referenced by the Stellar memo';
+  'Stable audit event identifier stored with the on-chain audit record';
 comment on column public.group_audit_events.transaction_hash is
   'Stellar transaction hash for the on-chain audit marker';
 comment on column public.group_audit_events.stellar_memo is
-  'Compact Stellar memo containing event type and event ID prefix';
+  'Compact Stellar memo containing the group identifier';

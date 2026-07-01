@@ -3,7 +3,7 @@
  *
  * Use `withMemoValidation` to wrap any route handler that receives a
  * `memoGroupId` in the request body or query string.  The middleware
- * validates the memo format and — when a `groupId` is also present —
+ * validates the memo format and, when a `groupId` is also present,
  * verifies that the memo matches the expected value for that group.
  *
  * Usage (in a route handler):
@@ -15,11 +15,13 @@
  */
 
 import { NextResponse } from "next/server";
+import { type SupabaseClient } from "@supabase/supabase-js";
 import {
   validateMemoGroupId,
   deriveMemoGroupId,
   memoMatchesGroup,
 } from "./memo";
+import { validateStoredGroupMemo } from "./memo-store";
 
 export interface MemoValidationResult {
   valid: boolean;
@@ -57,6 +59,18 @@ export function validateRequestMemo(
   }
 
   return { valid: true };
+}
+
+export async function validateRequestMemoForStoredGroup(
+  supabase: SupabaseClient,
+  memo: unknown,
+  groupId: string,
+): Promise<MemoValidationResult> {
+  if (typeof memo !== "string") {
+    return { valid: false, reason: "memo must be a non-empty string" };
+  }
+
+  return validateStoredGroupMemo(supabase, groupId, memo);
 }
 
 /**

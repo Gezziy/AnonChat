@@ -1,9 +1,39 @@
+/**
+ * POST /api/groups/[id]/invite
+ *
+ * Regenerates an invite code for a group. Requires:
+ *   1. Supabase session authentication
+ *   2. Wallet signature over a one-time nonce
+ *   3. Caller must be the group owner
+ *
+ * Request body:
+ *   {
+ *     walletAddress: string,
+ *     signature: string,
+ *     expires_in?: number,
+ *     max_uses?: number
+ *   }
+ */
+
 import { createClient } from "@/lib/supabase/server"
 import { type NextRequest, NextResponse } from "next/server"
 import {
   generateInviteCode,
   buildExpiresAt,
 } from "@/lib/groups/invite"
+import {
+  ensureWalletMatchesUser,
+  resolveWalletFromUser,
+  verifyWalletAuthorization,
+} from "@/lib/auth/wallet-authorization"
+import { auditLog } from "@/lib/auth/signed-message-middleware"
+
+type InviteBody = {
+  walletAddress?: string
+  signature?: string
+  expires_in?: number
+  max_uses?: number
+}
 
 export async function POST(
   request: NextRequest,
@@ -20,13 +50,48 @@ export async function POST(
 
     const {
       data: { user },
+      error: authError,
     } = await supabase.auth.getUser()
+
+    if (authError) {
+      console.error("[groups/invite] auth error:", authError)
+      return NextResponse.json(
+        { error: "Unable to verify authentication" },
+        { status: 401 }
+      )
+    }
 
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    // Verify the group exists
+    const body: InviteBody = await request.json().catch(() => ({}))
+
+    const auth = await verifyWalletAuthorization(body, "regenerate_invite")
+    if (!auth.ok) {
+      return auth.response
+    }
+
+    const { data: callerProfile, error: profileError } = await supabase
+      .from("profiles")
+      .select("id, wallet_address")
+      .eq("id", user.id)
+      .maybeSingle()
+
+    if (profileError) {
+      console.error("[groups/invite] profile lookup error:", profileError)
+      return NextResponse.json(
+        { error: "Failed to retrieve caller profile" },
+        { status: 500 }
+      )
+    }
+
+    const callerWallet = resolveWalletFromUser(user, callerProfile)
+    const walletMismatch = ensureWalletMatchesUser(auth.walletAddress, callerWallet)
+    if (walletMismatch) {
+      return walletMismatch
+    }
+
     const { data: group, error: groupError } = await supabase
       .from("rooms")
       .select("id, name, created_by, is_private")
@@ -38,30 +103,14 @@ export async function POST(
       return NextResponse.json({ error: "Group not found" }, { status: 404 })
     }
 
-    // Only the group creator or an existing member can generate an invite
-    const isCreator = group.created_by === user.id
-
-    if (!isCreator) {
-      const { data: membership } = await supabase
-        .from("room_members")
-        .select("user_id")
-        .eq("room_id", groupId)
-        .eq("user_id", user.id)
-        .maybeSingle()
-
-      if (!membership) {
-        return NextResponse.json(
-          { error: "Only group members can generate invite codes" },
-          { status: 403 }
-        )
-      }
+    if (group.created_by !== user.id) {
+      return NextResponse.json(
+        { error: "Forbidden. Only the group owner can regenerate invite codes." },
+        { status: 403 }
+      )
     }
 
-    const body = await request.json().catch(() => ({}))
-    const { expires_in, max_uses } = body as {
-      expires_in?: number
-      max_uses?: number
-    }
+    const { expires_in, max_uses } = body
 
     if (max_uses !== undefined && (!Number.isInteger(max_uses) || max_uses < 1)) {
       return NextResponse.json(
@@ -74,6 +123,20 @@ export async function POST(
       return NextResponse.json(
         { error: "expires_in must be a positive integer (seconds)" },
         { status: 400 }
+      )
+    }
+
+    // Invalidate existing invite codes before generating a new one
+    const { error: deleteError } = await supabase
+      .from("invites")
+      .delete()
+      .eq("room_id", groupId)
+
+    if (deleteError) {
+      console.error("[groups/invite] failed to invalidate old invites:", deleteError)
+      return NextResponse.json(
+        { error: "Failed to regenerate invite code" },
+        { status: 500 }
       )
     }
 
@@ -95,7 +158,12 @@ export async function POST(
 
     if (insertError) throw insertError
 
-    console.info(`[groups/invite] Invite code generated for group ${groupId} by user ${user.id}`)
+    auditLog("regenerate_invite", auth.walletAddress, {
+      groupId,
+      inviteCode: invite.code,
+    })
+
+    console.info(`[groups/invite] Invite code regenerated for group ${groupId} by user ${user.id}`)
 
     return NextResponse.json(
       {

@@ -1,5 +1,5 @@
 /**
- * GET /api/stellar/memo?memo=grp_abc123xyz
+ * GET /api/stellar/memo?memo=grp_2f4a7c9b0e1d6a8c3f5b9d0a
  *
  * Looks up a group by its Stellar memo identifier.
  * Returns the room record and the associated transaction hash.
@@ -23,7 +23,6 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const memo = searchParams.get("memo");
 
-  // ── 1. Validate memo parameter ──────────────────────────────────────────────
   if (!memo) {
     return NextResponse.json(
       { error: "memo query parameter is required" },
@@ -49,11 +48,12 @@ export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient();
 
-    // ── 2. Look up via the fast lookup table first ──────────────────────────
     const { data: memoRecord, error: memoError } = await supabase
       .from("group_tx_memos")
       .select("group_id, tx_hash, created_at")
       .eq("memo_group_id", memo)
+      .order("created_at", { ascending: false })
+      .limit(1)
       .maybeSingle();
 
     if (memoError) {
@@ -73,7 +73,6 @@ export async function GET(request: NextRequest) {
     }
 
     if (!memoRecord) {
-      // ── 3. Fallback: query rooms table directly ─────────────────────────
       const { data: room, error: roomError } = await supabase
         .from("rooms")
         .select(
@@ -122,7 +121,6 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // ── 4. Fetch the full room record ───────────────────────────────────────
     const { data: room, error: roomError } = await supabase
       .from("rooms")
       .select("id, name, description, is_private, created_at")

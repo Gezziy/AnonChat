@@ -5,4 +5,5 @@ export interface Message {
   timestamp: Date;
   isOwn: boolean;
   isEncrypted: boolean;
+  editedAt?: Date;
 }

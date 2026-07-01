@@ -6,6 +6,7 @@ import {
 } from "@/lib/groups/invite";
 import { recordGroupAuditEvent } from "@/lib/blockchain/audit";
 import { insertRoomActivity } from "@/lib/activity/room-activity";
+import { notifyGroupAdded } from "@/lib/notifications/service";
 import { type SupabaseClient } from "@supabase/supabase-js";
 
 export async function POST(request: NextRequest) {
@@ -58,7 +59,7 @@ export async function POST(request: NextRequest) {
     // verify room exists
     const { data: room } = await supabase
       .from("rooms")
-      .select("id")
+      .select("id, name")
       .eq("id", roomId)
       .maybeSingle();
     if (!room)
@@ -112,10 +113,24 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    const notification = await notifyGroupAdded(
+      supabase,
+      user.id,
+      roomId,
+      room.name,
+    );
+
+    if (!notification.delivered && notification.deliveryError) {
+      console.warn(
+        `[rooms/join] Notification stored but realtime delivery failed for user ${user.id}: ${notification.deliveryError}`,
+      );
+    }
+
     return NextResponse.json({
       success: true,
       membership: membership?.[0],
       audit: auditEvent ?? undefined,
+      notification: notification.notification ?? undefined,
     });
   } catch (error) {
     console.error("POST /api/rooms/join error:", error);

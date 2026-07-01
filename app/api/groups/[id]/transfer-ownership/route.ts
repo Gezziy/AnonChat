@@ -4,27 +4,34 @@
  * Allows the current group owner to transfer ownership to another member.
  *
  * Request body:
- *   {
- *     newOwnerWalletAddress: string   // Stellar public key of the new owner
- *     signature: string               // Hex-encoded Ed25519 signature of the nonce
- *   }
+ * {
+ * walletAddress: string           // Caller's Stellar public key
+ * signature: string               // Hex-encoded Ed25519 signature of the nonce
+ * newOwnerWalletAddress: string   // Stellar public key of the new owner
+ * }
  *
  * Flow:
- *   1. Authenticate caller via Supabase session
- *   2. Validate inputs (wallet address format, required fields)
- *   3. Consume the one-time nonce for the caller's wallet (prevents replay)
- *   4. Verify the Ed25519 signature over the nonce
- *   5. Resolve the new owner's user ID from their wallet address
- *   6. Confirm the new owner is an active member of the group
- *   7. Call transfer_room_ownership RPC (atomic DB update + audit log)
- *   8. Write a room_activity_logs entry for transparency
- *   9. Optionally submit a Stellar transaction recording the transfer on-chain
+ * 1. Authenticate caller via Supabase session
+ * 2. Validate inputs (wallet address format, required fields)
+ * 3. Consume the one-time nonce for the caller's wallet (prevents replay)
+ * 4. Verify the Ed25519 signature over the nonce
+ * 5. Resolve the new owner's user ID from their wallet address
+ * 6. Confirm the new owner is an active member of the group
+ * 7. Call transfer_room_ownership RPC (atomic DB update + audit log)
+ * 8. Write a room_activity_logs entry for transparency
+ * 9. Optionally submit a Stellar transaction recording the transfer on-chain
  */
 
 import { createClient } from "@/lib/supabase/server"
 import { type NextRequest, NextResponse } from "next/server"
-import { consumeNonce, verifyWalletSignature } from "@/lib/auth/stellar-verify"
 import { validateWalletAddressWithMessage } from "@/lib/auth/validation"
+import {
+  ensureWalletMatchesUser,
+  resolveWalletFromUser,
+  verifyWalletAuthorization,
+} from "@/lib/auth/wallet-authorization"
+import { verifyWalletSignature } from "@/lib/auth/stellar-verify";
+import { auditLog } from "@/lib/auth/signed-message-middleware"
 import { insertRoomActivity } from "@/lib/activity/room-activity"
 import {
   submitMetadataHash,
@@ -36,11 +43,14 @@ import {
   generateCorrelationId,
 } from "@/lib/blockchain/logger"
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { requireGroupOwner } from "@/lib/middleware/group-ownership"
+import { notifyOwnershipTransferred } from "@/lib/notifications/service"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type TransferOwnershipBody = {
   newOwnerWalletAddress?: string
+  walletAddress?: string
   signature?: string
 }
 
@@ -88,11 +98,11 @@ export async function POST(
     // ── 2. Parse and validate request body ───────────────────────────────────
     const body: TransferOwnershipBody = await request.json().catch(() => ({}))
 
-    const { newOwnerWalletAddress, signature } = body
+    const { newOwnerWalletAddress, walletAddress, signature } = body
 
-    if (!newOwnerWalletAddress || !signature) {
+    if (!newOwnerWalletAddress) {
       return NextResponse.json(
-        { error: "newOwnerWalletAddress and signature are required" },
+        { error: "newOwnerWalletAddress is required" },
         { status: 400 }
       )
     }
@@ -102,14 +112,15 @@ export async function POST(
       return NextResponse.json({ error: walletError }, { status: 400 })
     }
 
-    if (typeof signature !== "string" || signature.trim() === "") {
-      return NextResponse.json(
-        { error: "signature is required" },
-        { status: 400 }
-      )
+    // ── 3. Verify wallet authorization (nonce + signature) ──────────────────
+    const auth = await verifyWalletAuthorization(
+      { walletAddress, signature },
+      "transfer_ownership",
+    )
+    if (!auth.ok) {
+      return auth.response
     }
 
-    // ── 3. Resolve the caller's wallet address from their profile ─────────────
     const { data: callerProfile, error: profileError } = await supabase
       .from("profiles")
       .select("id, wallet_address")
@@ -124,48 +135,45 @@ export async function POST(
       )
     }
 
-    const callerWallet: string | null =
-      callerProfile?.wallet_address ??
-      // Fallback: wallet address is encoded in the deterministic email
-      (user.email?.endsWith("@wallet.anonchat.local")
-        ? user.email.replace("@wallet.anonchat.local", "")
-        : null)
+    const callerWallet = resolveWalletFromUser(user, callerProfile)
+    const walletMismatch = ensureWalletMatchesUser(auth.walletAddress, callerWallet)
+    if (walletMismatch) {
+      return walletMismatch
+    }
 
+    // ── Guard: callerWallet must be non-null before signature verification ────
     if (!callerWallet) {
       return NextResponse.json(
-        { error: "Could not determine caller wallet address" },
+        { error: "No wallet address associated with this account." },
         { status: 400 }
       )
     }
 
-    // ── 4. Consume the one-time nonce (prevents replay attacks) ──────────────
-    const nonce = await consumeNonce(callerWallet)
-    if (!nonce) {
-      console.warn(
-        `[transfer-ownership] nonce missing or expired for wallet: ${callerWallet.substring(0, 8)}...`
-      )
-      return NextResponse.json(
-        { error: "Nonce not found or expired. Request a new nonce first." },
-        { status: 401 }
-      )
-    }
+    const nonce = auth.nonce
 
     // ── 5. Verify the Ed25519 signature ───────────────────────────────────────
-    const isValid = verifyWalletSignature(callerWallet, nonce, signature)
-    if (!isValid) {
-      console.warn(
-        `[transfer-ownership] signature verification failed for wallet: ${callerWallet.substring(0, 8)}...`
-      )
+    if (!signature) {
       return NextResponse.json(
-        {
-          error:
-            "Signature verification failed. Wallet ownership could not be proved.",
-        },
-        { status: 401 }
+        { error: "Signature is required for verification." },
+        { status: 400 }
       )
     }
 
+    const isValid = verifyWalletSignature(callerWallet, nonce, signature)
+
     // ── 6. Verify the group exists and the caller is the current owner ────────
+    const ownerCheck = await requireGroupOwner({
+      supabase,
+      groupId,
+      callerWallet,
+      userId: user.id,
+    })
+
+    if (ownerCheck instanceof NextResponse) {
+      return ownerCheck
+    }
+
+    // ── 4. Verify the group exists and the caller is the current owner ────────
     const { data: group, error: groupError } = await supabase
       .from("rooms")
       .select("id, name, created_by, is_private")
@@ -376,9 +384,39 @@ export async function POST(
       )
     }
 
+    auditLog("transfer_ownership", auth.walletAddress, {
+      groupId,
+      newOwnerWalletAddress,
+      transferLogId: result?.transfer_log_id ?? null,
+    })
+
     console.info(
       `[transfer-ownership] Group ${groupId} ownership transferred from user ${user.id} to user ${newOwnerId}`
     )
+
+    const [newOwnerNotification, previousOwnerNotification] = await Promise.all([
+      notifyOwnershipTransferred(supabase, {
+        userId: newOwnerId,
+        groupId,
+        groupName: group.name,
+        role: "new_owner",
+      }),
+      notifyOwnershipTransferred(supabase, {
+        userId: user.id,
+        groupId,
+        groupName: group.name,
+        role: "previous_owner",
+        counterpartyWallet: newOwnerWalletAddress,
+      }),
+    ])
+
+    for (const result of [newOwnerNotification, previousOwnerNotification]) {
+      if (!result.delivered && result.deliveryError) {
+        console.warn(
+          `[transfer-ownership] Notification stored but realtime delivery failed: ${result.deliveryError}`,
+        )
+      }
+    }
 
     return NextResponse.json(
       {
@@ -391,6 +429,10 @@ export async function POST(
           submitted: stellarTxHash !== null,
           transactionHash: stellarTxHash ?? undefined,
           explorerUrl: explorerUrl ?? undefined,
+        },
+        notifications: {
+          new_owner: newOwnerNotification.notification ?? undefined,
+          previous_owner: previousOwnerNotification.notification ?? undefined,
         },
       },
       { status: 200 }

@@ -7,6 +7,7 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { ChatWelcomeState } from "@/components/chat-welcome-state";
 import { Header } from "@/components/header";
 import { Footer } from "@/components/footer";
 import { ChatEmptyState } from "@/components/chat-empty-state";
@@ -19,6 +20,8 @@ import { RoomMembersDialog } from "@/components/room-members-dialog";
 import ConnectWallet from "@/components/wallet-connector";
 import { RoomActivityPanel } from "@/components/room-activity-panel";
 import { MessageSearchBar } from "@/components/message-search-bar";
+import { GroupVerificationBadge } from "@/components/GroupVerificationBadge";
+import { ChatMessageBubble, type ChatMessage } from "@/components/chat-message-bubble";
 import { cn } from "@/lib/utils";
 import { highlightText } from "@/lib/highlight-text";
 import { handleAppError } from "@/lib/error-handler"; // Integrated Error Handler
@@ -46,13 +49,7 @@ type ChatPreview = {
   status: PresenceStatus;
 };
 
-type ChatMessage = {
-  id: string;
-  author: "me" | "them";
-  text: string;
-  time: string;
-  status: "sending" | "sent" | "delivered" | "read";
-};
+
 
 interface DBRoom {
   id: string;
@@ -170,9 +167,21 @@ export default function ChatPage() {
     setIsLoadingRooms(true);
     try {
       const response = await fetch("/api/rooms");
+      
+      // Handle non-200 responses gracefully (like the 500 error you're getting)
+      if (!response.ok) {
+        console.warn(`Rooms API returned status ${response.status}. Using local preview mode.`);
+        setChats([]);
+        setSelectedChatId(null);
+        return;
+      }
+
       const data = await response.json();
-      if (!response.ok || data.error) {
-        throw new Error(data.error || "Failed to fetch rooms");
+      if (data.error) {
+        console.warn("Rooms API returned a custom error:", data.error);
+        setChats([]);
+        setSelectedChatId(null);
+        return;
       }
 
       const rawRooms: DBRoom[] = data.rooms || [];
@@ -196,8 +205,10 @@ export default function ChatPage() {
         (currentSelected) => currentSelected || previews[0]?.id || null,
       );
     } catch (error) {
-      console.error("Failed to fetch rooms", error);
+      // This catches the 'TypeError: fetch failed' from your dummy URL completely!
+      console.warn("Network fetch to rooms failed. Falling back to empty state for preview.");
       setChats([]);
+      setSelectedChatId(null);
     } finally {
       setIsLoadingRooms(false);
     }
@@ -402,11 +413,11 @@ export default function ChatPage() {
         prev.map((chat) =>
           chat.id === selectedChatId
             ? {
-                ...chat,
-                lastMessage: trimmedMessage,
-                lastSeen: savedMessage.time,
-                unreadCount: 0,
-              }
+              ...chat,
+              lastMessage: trimmedMessage,
+              lastSeen: savedMessage.time,
+              unreadCount: 0,
+            }
             : chat,
         ),
       );
@@ -562,6 +573,10 @@ export default function ChatPage() {
                                   >
                                     {chat.name}
                                   </p>
+                                  <GroupVerificationBadge
+                                    groupId={chat.id}
+                                    showLabel={false}
+                                  />
                                 </div>
                                 <div className="shrink-0 flex flex-col items-end gap-1">
                                   <p className="text-[11px] text-muted-foreground whitespace-nowrap">
@@ -600,7 +615,13 @@ export default function ChatPage() {
                 activeMobileTab === "chats" && "hidden md:flex",
               )}
             >
-              {!selectedChat && <ChatEmptyState />}
+              {/* INTEGRATED WELCOME STATE HERE */}
+              {!selectedChat && (
+                <ChatWelcomeState
+                  onCreateGroup={() => console.log("Open Create Group Overlay Trigger")}
+                  onJoinGroup={() => console.log("Open Join Group Code Overlay Trigger")}
+                />
+              )}
 
               {selectedChat && (
                 <>
@@ -624,9 +645,12 @@ export default function ChatPage() {
                         </button>
 
                         <div className="min-w-0">
-                          <p className="font-semibold truncate">
-                            {selectedChat.name}
-                          </p>
+                          <div className="flex items-center gap-2 min-w-0">
+                            <p className="font-semibold truncate">
+                              {selectedChat.name}
+                            </p>
+                            <GroupVerificationBadge groupId={selectedChat.id} />
+                          </div>
                           <p className="text-xs text-muted-foreground truncate">
                             {memberCountByRoom[selectedChat.id] !== undefined
                               ? `${memberCountByRoom[selectedChat.id]} members`
@@ -720,34 +744,11 @@ export default function ChatPage() {
 
                      {!isLoadingMessagesByRoom[selectedChatId || ''] &&
                        filteredMessages.map((message) => (
-                         <div
-                           key={message.id}
-                           className={cn(
-                             "max-w-[85%] sm:max-w-[72%] rounded-2xl px-4 py-2.5 shadow-sm text-sm",
-                             message.author === "me"
-                               ? "ml-auto bg-primary text-primary-foreground rounded-br-sm"
-                               : "mr-auto bg-card border border-border/70 rounded-bl-sm",
-                           )}
-                         >
-                           <p className="whitespace-pre-wrap break-words leading-relaxed">
-                             {highlightText(message.text, messageSearchQuery)}
-                           </p>
-                           <div
-                             className={cn(
-                               "mt-1 flex items-center justify-end gap-1 text-[10px]",
-                               message.author === "me"
-                                 ? "text-primary-foreground/80"
-                                 : "text-muted-foreground",
-                             )}
-                           >
-                             <span>{message.time}</span>
-                             {message.author === "me" && (
-                               <span>
-                                 {message.status === "sending" ? "..." : "✓✓"}
-                               </span>
-                             )}
-                           </div>
-                         </div>
+                         <ChatMessageBubble 
+                           key={message.id} 
+                           message={message} 
+                           searchQuery={messageSearchQuery} 
+                         />
                        ))}
                    </div>
 

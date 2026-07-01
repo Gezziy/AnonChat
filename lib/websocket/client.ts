@@ -266,6 +266,18 @@ export class WebSocketClient {
       payload: { messageId, roomId },
       timestamp: Date.now(),
     });
+
+  editMessage = (messageId: string, roomId: string, content: string) => {
+    if (!this.isConnected()) {
+      return { success: false, error: "OFFLINE" } as const;
+    }
+    this.send({
+      type: "edit_message",
+      payload: { messageId, roomId, content },
+      timestamp: Date.now(),
+    });
+    return { success: true } as const;
+  };
 }
 
 let instance: WebSocketClient | null = null;

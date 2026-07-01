@@ -13,6 +13,7 @@ interface RealtimeMessageUpdate {
   content: string
   createdAt: number
   status: "sending" | "sent" | "delivered"
+  editedAt?: number
 }
 
 export interface TypingIndicator {
@@ -41,6 +42,7 @@ export function useRealtimeChat(roomId: string, userId?: string) {
     markAsDelivered,
     notifyTyping,
     notifyStopTyping,
+    editMessage,
   } = useWebSocketSend()
 
   // Join room on mount
@@ -84,6 +86,20 @@ export function useRealtimeChat(roomId: string, userId?: string) {
       setMessages((prev) =>
         prev.map((m) =>
           m.id === payload.messageId ? { ...m, status: payload.status } : m,
+        ),
+      )
+    }
+  })
+
+  // Listen for message edits broadcast from the server
+  useWebSocketMessage("message_edit", (msg: WebSocketMessage) => {
+    const payload = msg.payload as any
+    if (payload.roomId === roomId) {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === payload.messageId
+            ? { ...m, content: payload.content, editedAt: payload.editedAt ?? m.editedAt }
+            : m,
         ),
       )
     }
@@ -189,6 +205,17 @@ export function useRealtimeChat(roomId: string, userId?: string) {
     [roomId, userId, sendMessage],
   )
 
+  const handleEditMessage = useCallback(
+    (messageId: string, newContent: string) => {
+      if (!roomId) return
+      const result = editMessage(messageId, roomId, newContent)
+      if (!result.success) {
+        toast.error(result.error || "Failed to edit message")
+      }
+    },
+    [roomId, editMessage],
+  )
+
   const handleTyping = useCallback(() => {
     if (roomId) {
       notifyTyping(roomId)
@@ -208,6 +235,7 @@ export function useRealtimeChat(roomId: string, userId?: string) {
     connectionStatus,
     handlers: {
       sendMessage: handleSendMessage,
+      editMessage: handleEditMessage,
       typing: handleTyping,
       stopTyping: handleStopTyping,
     },

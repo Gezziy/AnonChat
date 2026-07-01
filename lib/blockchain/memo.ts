@@ -1,49 +1,33 @@
 /**
  * Stellar memo utilities for group identification.
  *
- * Stellar's TEXT memo is limited to 28 bytes (UTF-8).  We derive a compact,
- * deterministic memo from the room ID so that every on-chain transaction can
- * be traced back to a specific group without requiring custom contracts or
- * extra fields.
+ * Stellar's TEXT memo is limited to 28 bytes. We derive a compact deterministic
+ * memo from the room ID so every on-chain transaction can be traced back to a
+ * specific group without custom contracts or extra fields.
  *
- * Memo format:  "grp_<12-char-slug>"   (17 bytes, well within the 28-byte cap)
- *
- * The 12-char slug is the first 12 characters of the base-36 representation of
- * the room's creation timestamp + random suffix, extracted directly from the
- * existing room ID format:  room_{timestamp}_{random9chars}
- *
- * If the room ID does not follow that pattern we fall back to a truncated
- * SHA-256 hex of the full room ID (first 24 hex chars → 12 bytes of entropy).
+ * Memo format: "grp_<24 lowercase hex chars>"
  */
 
-import { createHash } from "crypto";
+import { createHash, timingSafeEqual } from "crypto";
 
 /** Maximum byte length allowed by Stellar for TEXT memos. */
 export const STELLAR_MEMO_MAX_BYTES = 28;
 
 /** Prefix that identifies AnonChat group memos on-chain. */
 const MEMO_PREFIX = "grp_";
+const MEMO_HASH_HEX_LENGTH = 24;
+const MEMO_PATTERN = /^grp_[a-f0-9]{24}$/;
 
 /**
- * Derives a deterministic, ≤28-byte memo string from a room ID.
+ * Derives a deterministic memo string from a room ID.
  *
  * @param roomId - The room's primary key (e.g. "room_1714000000000_abc123xyz")
  * @returns A memo string safe to pass to `StellarSdk.Memo.text()`
  */
 export function deriveMemoGroupId(roomId: string): string {
-  // Try to extract the random suffix from the canonical room ID format
-  const match = roomId.match(/^room_\d+_([a-z0-9]+)$/i);
-  if (match) {
-    // Use up to 12 chars of the random suffix for the slug
-    const slug = match[1].substring(0, 12).toLowerCase();
-    const memo = `${MEMO_PREFIX}${slug}`;
-    return memo.substring(0, STELLAR_MEMO_MAX_BYTES);
-  }
-
-  // Fallback: SHA-256 of the room ID, take first 24 hex chars
-  const hash = createHash("sha256").update(roomId).digest("hex");
-  const memo = `${MEMO_PREFIX}${hash.substring(0, 24)}`;
-  return memo.substring(0, STELLAR_MEMO_MAX_BYTES);
+  const normalizedRoomId = roomId.trim();
+  const hash = createHash("sha256").update(normalizedRoomId).digest("hex");
+  return `${MEMO_PREFIX}${hash.substring(0, MEMO_HASH_HEX_LENGTH)}`;
 }
 
 /**
@@ -51,9 +35,8 @@ export function deriveMemoGroupId(roomId: string): string {
  *
  * Rules:
  *  - Must be a non-empty string
- *  - Must be ≤28 bytes when encoded as UTF-8
- *  - Must start with the "grp_" prefix (AnonChat convention)
- *  - Must contain only printable ASCII characters (Stellar SDK requirement)
+ *  - Must be 28 bytes or less when encoded as UTF-8
+ *  - Must match AnonChat's "grp_<24 lowercase hex chars>" convention
  *
  * @param memo - The memo string to validate
  * @returns `{ valid: true }` or `{ valid: false, reason: string }`
@@ -73,19 +56,10 @@ export function validateMemoGroupId(
     };
   }
 
-  if (!memo.startsWith(MEMO_PREFIX)) {
+  if (!MEMO_PATTERN.test(memo)) {
     return {
       valid: false,
-      reason: `memo must start with "${MEMO_PREFIX}" prefix`,
-    };
-  }
-
-  // Stellar SDK rejects non-printable ASCII in text memos
-  // eslint-disable-next-line no-control-regex
-  if (/[^\x20-\x7E]/.test(memo)) {
-    return {
-      valid: false,
-      reason: "memo must contain only printable ASCII characters",
+      reason: 'memo must match "grp_<24 lowercase hex chars>"',
     };
   }
 
@@ -102,5 +76,14 @@ export function validateMemoGroupId(
  */
 export function memoMatchesGroup(roomId: string, onChainMemo: string): boolean {
   const expected = deriveMemoGroupId(roomId);
-  return expected === onChainMemo;
+  const expectedBuffer = Buffer.from(expected, "utf8");
+  const actualBuffer = Buffer.from(onChainMemo, "utf8");
+
+  const expectedUint8 = Uint8Array.from(expectedBuffer);
+  const actualUint8 = Uint8Array.from(actualBuffer);
+
+  return (
+    expectedUint8.length === actualUint8.length &&
+    timingSafeEqual(expectedUint8, actualUint8)
+  );
 }

@@ -5,6 +5,7 @@ import {
   incrementInviteUseCount,
 } from "@/lib/groups/invite";
 import { recordGroupAuditEvent } from "@/lib/blockchain/audit";
+import { notifyGroupAdded } from "@/lib/notifications/service";
 
 export async function POST(request: NextRequest) {
   try {
@@ -96,6 +97,19 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    const notification = await notifyGroupAdded(
+      supabase,
+      user.id,
+      group.id,
+      group.name,
+    );
+
+    if (!notification.delivered && notification.deliveryError) {
+      console.warn(
+        `[groups/join] Notification stored but realtime delivery failed for user ${user.id}: ${notification.deliveryError}`,
+      );
+    }
+
     return NextResponse.json({
       success: true,
       group: { id: group.id, name: group.name },
@@ -105,6 +119,7 @@ export async function POST(request: NextRequest) {
         joined_at: membership.joined_at,
       },
       audit: auditEvent ?? undefined,
+      notification: notification.notification ?? undefined,
     });
   } catch (error) {
     console.error("[groups/join] POST /api/groups/join error:", error);

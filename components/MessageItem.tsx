@@ -19,8 +19,11 @@ export const MessageItem: React.FC<Props> = ({ message }) => {
         )}
         <p>{message.text}</p>
       </div>
-      <div className="flex items-center gap-1 mt-1 px-1">
+      <div className="flex items-center gap-1 mt-1 px-1 flex-wrap">
         <span className='text-xs text-gray-500'>{formatTimestamp(message.timestamp)}</span>
+        {message.editedAt && (
+          <span className='text-xs text-gray-400 italic'>Edited</span>
+        )}
         {message.isEncrypted && <EncryptionBadge />}
       </div>
     </div>
