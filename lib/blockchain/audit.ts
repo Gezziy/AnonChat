@@ -8,10 +8,10 @@ import { verifyStellarTransaction } from "@/lib/blockchain/transaction-verificat
 type SupabaseErrorLike = { message: string };
 type SupabaseMutationResult = PromiseLike<{ error: SupabaseErrorLike | null }>;
 type SupabaseUpdateBuilder = {
-  eq: (column: string, value: string) => SupabaseMutationResult;
+  eq: (column: string, value: string) => SupabaseMutationResult | any;
 };
 type SupabaseTableLike = {
-  insert: (values: Record<string, unknown>) => SupabaseMutationResult;
+  insert: (values: Record<string, unknown>) => SupabaseMutationResult | any;
   update: (values: Record<string, unknown>) => SupabaseUpdateBuilder;
 };
 type SupabaseClientLike = {

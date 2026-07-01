@@ -16,7 +16,7 @@ type SupabaseErrorLike = { message: string };
 type SupabaseInsertResult = PromiseLike<{ error: SupabaseErrorLike | null }>;
 type SupabaseInsertable = {
   from: (table: string) => {
-    insert: (values: Record<string, unknown>) => SupabaseInsertResult;
+    insert: (values: Record<string, unknown>) => SupabaseInsertResult | any;
   };
 };
 

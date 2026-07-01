@@ -6,6 +6,7 @@ export default defineConfig({
     environment: "happy-dom",
     include: [
       "lib/blockchain/group-verification.test.ts",
+      "lib/blockchain/transaction-verification.test.ts",
       "lib/utils/stellar-address.test.ts",
       "components/GroupVerificationBadge.test.tsx",
     ],
