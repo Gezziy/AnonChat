@@ -334,12 +334,17 @@ export async function getTransaction(txHash: string): Promise<StellarTransaction
       ),
     ]);
 
+    const ledger = (transaction as { ledger_attr?: number }).ledger_attr;
+
     return {
       hash: transaction.hash,
       memo: transaction.memo || "",
       memoType: (transaction as any).memo_type,
-      ledger: transaction.ledger_attr,
+      ledger: ledger ?? 0,
       created_at: transaction.created_at,
+      successful: Boolean(transaction.successful),
+      source_account: transaction.source_account,
+      operation_count: transaction.operation_count,
     };
   } catch (error: any) {
     logBlockchainOperation("error", "Failed to retrieve transaction", {

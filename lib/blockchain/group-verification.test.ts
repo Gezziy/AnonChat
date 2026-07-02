@@ -22,6 +22,19 @@ const baseRoom = {
   metadata_hash: null as string | null,
 };
 
+function makeTransaction(
+  overrides: Partial<StellarTransaction> = {},
+): StellarTransaction {
+  return {
+    hash: baseRoom.stellar_tx_hash!,
+    memo: deriveMemoGroupId(baseRoom.id),
+    ledger: 1,
+    created_at: "2026-01-01T00:00:00.000Z",
+    successful: true,
+    ...overrides,
+  };
+}
+
 describe("group verification logic", () => {
   it("builds metadata including owner wallet", () => {
     const metadata = buildGroupMetadata(baseRoom);
@@ -47,12 +60,9 @@ describe("group verification logic", () => {
   });
 
   it("rejects verification when memo does not match group", () => {
-    const transaction: StellarTransaction = {
-      hash: baseRoom.stellar_tx_hash!,
+    const transaction = makeTransaction({
       memo: "grp_wrongmemo000",
-      ledger: 1,
-      created_at: "2026-01-01T00:00:00.000Z",
-    };
+    });
 
     const result = evaluateGroupVerification(baseRoom, transaction);
 
@@ -67,12 +77,7 @@ describe("group verification logic", () => {
       owner_wallet: null,
     });
     const metadataHash = computeHash(metadata);
-    const transaction: StellarTransaction = {
-      hash: baseRoom.stellar_tx_hash!,
-      memo: deriveMemoGroupId(baseRoom.id),
-      ledger: 1,
-      created_at: "2026-01-01T00:00:00.000Z",
-    };
+    const transaction = makeTransaction();
 
     const result = evaluateGroupVerification(
       {
@@ -90,12 +95,7 @@ describe("group verification logic", () => {
 
   it("rejects verification when metadata hash does not match anchored record", () => {
     const metadata = buildGroupMetadata(baseRoom);
-    const transaction: StellarTransaction = {
-      hash: baseRoom.stellar_tx_hash!,
-      memo: deriveMemoGroupId(baseRoom.id),
-      ledger: 1,
-      created_at: "2026-01-01T00:00:00.000Z",
-    };
+    const transaction = makeTransaction();
 
     const result = evaluateGroupVerification(
       {
@@ -113,12 +113,7 @@ describe("group verification logic", () => {
   it("verifies a fully anchored group with matching memo and wallet", () => {
     const metadata = buildGroupMetadata(baseRoom);
     const metadataHash = computeHash(metadata);
-    const transaction: StellarTransaction = {
-      hash: baseRoom.stellar_tx_hash!,
-      memo: deriveMemoGroupId(baseRoom.id),
-      ledger: 1,
-      created_at: "2026-01-01T00:00:00.000Z",
-    };
+    const transaction = makeTransaction();
 
     const result = evaluateGroupVerification(
       {
@@ -136,13 +131,9 @@ describe("group verification logic", () => {
 
   it("accepts Stellar memo type values returned as MEMO_TEXT", () => {
     const metadata = buildGroupMetadata(baseRoom);
-    const transaction: StellarTransaction = {
-      hash: baseRoom.stellar_tx_hash!,
-      memo: deriveMemoGroupId(baseRoom.id),
+    const transaction = makeTransaction({
       memoType: "MEMO_TEXT",
-      ledger: 1,
-      created_at: "2026-01-01T00:00:00.000Z",
-    };
+    });
 
     const result = evaluateGroupVerification(
       {
@@ -158,13 +149,9 @@ describe("group verification logic", () => {
 
   it("rejects matching group memos when Stellar memo type is not text", () => {
     const metadata = buildGroupMetadata(baseRoom);
-    const transaction: StellarTransaction = {
-      hash: baseRoom.stellar_tx_hash!,
-      memo: deriveMemoGroupId(baseRoom.id),
+    const transaction = makeTransaction({
       memoType: "MEMO_HASH",
-      ledger: 1,
-      created_at: "2026-01-01T00:00:00.000Z",
-    };
+    });
 
     const result = evaluateGroupVerification(
       {
@@ -180,12 +167,7 @@ describe("group verification logic", () => {
   });
 
   it("cannot spoof verification by omitting anchored metadata hash", () => {
-    const transaction: StellarTransaction = {
-      hash: baseRoom.stellar_tx_hash!,
-      memo: deriveMemoGroupId(baseRoom.id),
-      ledger: 1,
-      created_at: "2026-01-01T00:00:00.000Z",
-    };
+    const transaction = makeTransaction();
 
     const walletCheck = verifyCreatorWalletOwnership(
       buildGroupMetadata(baseRoom),
