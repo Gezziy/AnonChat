@@ -38,6 +38,7 @@ import {
   ScrollText,
   Users,
 } from "lucide-react";
+import { StellarNetworkStatus } from "@/components/stellar-network-status";
 
 type ChatPreview = {
   id: string;
@@ -487,6 +488,8 @@ export default function ChatPage() {
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <Header />
+
+      <StellarNetworkStatus variant="banner" />
 
       <main className="flex-1 pt-24 pb-24 md:pb-8 px-3 sm:px-6">
         <div className="mx-auto w-full max-w-7xl h-[min(84vh,820px)] rounded-3xl border border-border/70 bg-card/90 shadow-[0_24px_64px_-24px_rgba(0,0,0,0.35)] backdrop-blur-sm overflow-hidden">
