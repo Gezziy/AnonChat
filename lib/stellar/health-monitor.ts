@@ -8,9 +8,11 @@
 import { Horizon } from "@stellar/stellar-sdk";
 import { loadStellarConfig, isConfigured } from "@/lib/blockchain/stellar-config";
 import { logBlockchainOperation } from "@/lib/blockchain/logger";
-import { generateEventId } from "@/lib/utils";
 
 export type NetworkStatus = "healthy" | "degraded" | "unavailable";
+function generateEventId(): string {
+  return `outage_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
 
 export interface HealthCheckResult {
   status: NetworkStatus;
