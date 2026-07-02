@@ -30,6 +30,22 @@ export type VerifyStellarTransactionInput = {
 
 const STELLAR_TX_HASH_PATTERN = /^[a-fA-F0-9]{64}$/;
 
+function verificationLogContext({
+  transactionHash,
+  groupActionEventId,
+  groupId,
+}: {
+  transactionHash: string;
+  groupActionEventId: string | null;
+  groupId: string | null;
+}) {
+  return {
+    transactionHash,
+    groupActionEventId,
+    ...(groupId ? { groupId } : {}),
+  };
+}
+
 export function isValidTransactionHash(transactionHash: string): boolean {
   return STELLAR_TX_HASH_PATTERN.test(transactionHash);
 }
@@ -133,11 +149,11 @@ export async function verifyStellarTransaction({
   logBlockchainOperation(
     "info",
     "Starting Stellar transaction verification",
-    {
+    verificationLogContext({
       transactionHash,
       groupActionEventId,
       groupId,
-    },
+    }),
     correlationId,
   );
 
@@ -160,9 +176,11 @@ export async function verifyStellarTransaction({
         "error",
         "Failed to store Stellar transaction verification result",
         {
-          transactionHash,
-          groupActionEventId,
-          groupId,
+          ...verificationLogContext({
+            transactionHash,
+            groupActionEventId,
+            groupId,
+          }),
           error: {
             type: error instanceof Error ? error.name : "DatabaseError",
             message: error instanceof Error ? error.message : "Unknown database error",
@@ -179,12 +197,14 @@ export async function verifyStellarTransaction({
     logLevel,
     "Completed Stellar transaction verification",
     {
-      transactionHash,
-      groupActionEventId,
-      groupId,
+      ...verificationLogContext({
+        transactionHash,
+        groupActionEventId,
+        groupId,
+      }),
       status: result.status,
       verified: result.verified,
-      error: result.error,
+      verificationError: result.error,
     },
     correlationId,
   );
