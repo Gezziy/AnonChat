@@ -162,6 +162,14 @@ export default function ConnectWallet() {
       });
       if (!res.ok) {
         console.warn("[wallet-auth] session refresh failed:", res.status);
+        if (res.status === 401) {
+          const body = await res.json().catch(() => ({}));
+          if (body?.error?.toLowerCase().includes("session expired") || body?.error?.toLowerCase().includes("signature")) {
+            handleAppError(new Error("Session expired. Please re-authenticate."), "SESSION_EXPIRED");
+            await disconnect();
+            setPublicKey(null);
+          }
+        }
       }
     } catch (error) {
       console.error("[wallet-auth] session refresh error:", error);

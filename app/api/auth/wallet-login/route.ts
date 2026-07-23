@@ -75,6 +75,7 @@ export async function POST(request: NextRequest) {
 
     if (!signInError && signInData.session) {
       console.log(`[wallet-auth] /api/auth/wallet-login successful sign-in for wallet: ${walletAddress.substring(0, 8)}...`);
+      const sigVerifiedAt = Math.floor(Date.now() / 1000);
       return buildWalletAuthResponse(
         walletAddress,
         {
@@ -84,6 +85,7 @@ export async function POST(request: NextRequest) {
           isNewUser: false,
         },
         200,
+        sigVerifiedAt,
       );
     }
 
@@ -113,6 +115,7 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(`[wallet-auth] /api/auth/wallet-login successful sign-up for wallet: ${walletAddress.substring(0, 8)}...`);
+    const sigVerifiedAt = Math.floor(Date.now() / 1000);
     return buildWalletAuthResponse(
       walletAddress,
       {
@@ -122,6 +125,7 @@ export async function POST(request: NextRequest) {
         isNewUser: true,
       },
       201,
+      sigVerifiedAt,
     );
   } catch (err: any) {
     console.error("[wallet-auth] /api/auth/wallet-login error:", err);

@@ -4,6 +4,7 @@ import {
   signWalletAccessToken,
   signWalletRefreshToken,
   verifyWalletRefreshToken,
+  getSignatureMaxAgeSec,
   WALLET_REFRESH_COOKIE,
 } from "@/lib/auth/wallet-jwt";
 import {
@@ -36,6 +37,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const sigAgeSec = Math.floor(Date.now() / 1000) - claims.sigVerifiedAt;
+    if (sigAgeSec > getSignatureMaxAgeSec()) {
+      return NextResponse.json(
+        { error: "Session expired. Wallet signature is too old. Please re-authenticate." },
+        { status: 401 },
+      );
+    }
+
     const consumed = await consumeRefreshToken(
       claims.jti,
       claims.walletAddress,
@@ -49,8 +58,8 @@ export async function POST(request: NextRequest) {
 
     const newJti = createRefreshTokenId();
     const [accessToken, newRefreshToken] = await Promise.all([
-      signWalletAccessToken(claims.walletAddress),
-      signWalletRefreshToken(claims.walletAddress, newJti),
+      signWalletAccessToken(claims.walletAddress, claims.sigVerifiedAt),
+      signWalletRefreshToken(claims.walletAddress, newJti, claims.sigVerifiedAt),
     ]);
 
     await storeRefreshToken(newJti, claims.walletAddress);
