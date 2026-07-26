@@ -37,6 +37,11 @@ import {
   Smile,
   ScrollText,
   Users,
+  Pin,
+  ChevronLeft,
+  ChevronRight,
+  X,
+  ShieldCheck,
 } from "lucide-react";
 import { StellarNetworkStatus } from "@/components/stellar-network-status";
 
@@ -99,10 +104,106 @@ export default function ChatPage() {
   const [messageOffsets, setMessageOffsets] = useState<Record<string, number>>({});
   const [hasMoreMessages, setHasMoreMessages] = useState<Record<string, boolean>>({});
   const [isLoadingMoreMessages, setIsLoadingMoreMessages] = useState<Record<string, boolean>>({});
-  const [isLoadingMessagesByRoom, setIsLoadingMessagesByRoom] = useState<Record<string, boolean>>({});
+  const [isLoadingMessagesByRoom, setIsLoadingMessagesByRoom] = useState<
+    Record<string, boolean>
+  >({});
   const loadingRef = useRef<Record<string, boolean>>({});
+
+  // Pinned messages & admin state
+  const [pinnedIdsByChat, setPinnedIdsByChat] = useState<Record<string, string[]>>({});
+  const [currentPinnedIndexByChat, setCurrentPinnedIndexByChat] = useState<Record<string, number>>({});
+  const [isAdmin, setIsAdmin] = useState<boolean>(true);
+  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
+
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Load pinned message IDs from localStorage per room
+  useEffect(() => {
+    if (!selectedChatId) return;
+    try {
+      const stored = localStorage.getItem(`anonchat_pinned_${selectedChatId}`);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          setPinnedIdsByChat((prev) => ({
+            ...prev,
+            [selectedChatId]: parsed,
+          }));
+        }
+      }
+    } catch {
+      // Ignore localStorage read errors
+    }
+  }, [selectedChatId]);
+
+  const togglePinMessage = useCallback((chatId: string, msgId: string) => {
+    setPinnedIdsByChat((prev) => {
+      const currentList = prev[chatId] || [];
+      const isAlreadyPinned = currentList.includes(msgId);
+      const updated = isAlreadyPinned
+        ? currentList.filter((id) => id !== msgId)
+        : [...currentList, msgId];
+
+      try {
+        localStorage.setItem(`anonchat_pinned_${chatId}`, JSON.stringify(updated));
+      } catch {
+        // Ignore localStorage write errors
+      }
+
+      return {
+        ...prev,
+        [chatId]: updated,
+      };
+    });
+  }, []);
+
+  const handleScrollToMessage = useCallback((msgId: string) => {
+    const targetEl = document.getElementById(`msg-${msgId}`);
+    if (targetEl) {
+      targetEl.scrollIntoView({ behavior: "smooth", block: "center" });
+      setHighlightedMessageId(msgId);
+      setTimeout(() => {
+        setHighlightedMessageId(null);
+      }, 2200);
+    }
+  }, []);
+
+  const pinnedIds = useMemo(() => {
+    return selectedChatId ? pinnedIdsByChat[selectedChatId] || [] : [];
+  }, [selectedChatId, pinnedIdsByChat]);
+
+  const pinnedMessages = useMemo(() => {
+    if (!selectedChatId) return [];
+    const roomMsgs = messagesByChat[selectedChatId] || [];
+    return pinnedIds
+      .map((id) => roomMsgs.find((m) => m.id === id))
+      .filter((m): m is ChatMessage => Boolean(m));
+  }, [selectedChatId, messagesByChat, pinnedIds]);
+
+  const activePinnedIndex = useMemo(() => {
+    if (!selectedChatId) return 0;
+    const idx = currentPinnedIndexByChat[selectedChatId] || 0;
+    return idx >= pinnedMessages.length ? 0 : idx;
+  }, [selectedChatId, currentPinnedIndexByChat, pinnedMessages.length]);
+
+  const activePinnedMessage = pinnedMessages[activePinnedIndex] || null;
+
+  const handleNextPinned = useCallback((chatId: string, total: number) => {
+    if (total <= 1) return;
+    setCurrentPinnedIndexByChat((prev) => ({
+      ...prev,
+      [chatId]: ((prev[chatId] || 0) + 1) % total,
+    }));
+  }, []);
+
+  const handlePrevPinned = useCallback((chatId: string, total: number) => {
+    if (total <= 1) return;
+    setCurrentPinnedIndexByChat((prev) => ({
+      ...prev,
+      [chatId]: ((prev[chatId] || 0) - 1 + total) % total,
+    }));
+  }, []);
 
   const transformToChatMessage = useCallback(
     (message: DBMessage): ChatMessage => ({
@@ -689,6 +790,25 @@ export default function ChatPage() {
                       <div className="flex shrink-0 items-center gap-2">
                         <button
                           type="button"
+                          onClick={() => setIsAdmin(!isAdmin)}
+                          className={cn(
+                            "inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs transition-colors",
+                            isAdmin
+                              ? "border-primary/50 bg-primary/10 text-primary font-medium"
+                              : "border-border/80 text-muted-foreground hover:text-foreground hover:bg-muted/40"
+                          )}
+                          title={
+                            isAdmin
+                              ? "Admin mode active (pin/unpin enabled)"
+                              : "Enable admin mode to pin messages"
+                          }
+                        >
+                          <ShieldCheck className="h-3.5 w-3.5" />
+                          {isAdmin ? "Admin" : "Member"}
+                        </button>
+
+                        <button
+                          type="button"
                           onClick={() => setAuditTrailOpen(true)}
                           className="inline-flex items-center gap-1.5 rounded-lg border border-border/80 px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/40"
                         >
@@ -706,6 +826,80 @@ export default function ChatPage() {
                       </div>
                     </div>
                   </header>
+
+                  {/* Pinned Messages Banner */}
+                  {selectedChat && pinnedIds.length > 0 && (
+                    <div className="px-4 py-2 bg-card/90 border-b border-border/70 flex items-center justify-between gap-3 text-xs shadow-sm backdrop-blur-sm">
+                      <div
+                        onClick={() =>
+                          activePinnedMessage &&
+                          handleScrollToMessage(activePinnedMessage.id)
+                        }
+                        className="flex items-center gap-2.5 min-w-0 flex-1 cursor-pointer hover:opacity-85 transition"
+                        title="Click to jump to original message"
+                      >
+                        <div className="p-1.5 rounded-full bg-primary/15 text-primary shrink-0">
+                          <Pin className="h-3.5 w-3.5 rotate-45" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-primary text-[11px] uppercase tracking-wide">
+                              Pinned Message{" "}
+                              {pinnedMessages.length > 1
+                                ? `(${activePinnedIndex + 1}/${pinnedMessages.length})`
+                                : ""}
+                            </span>
+                          </div>
+                          <p className="text-foreground/90 truncate font-medium text-xs mt-0.5">
+                            {activePinnedMessage
+                              ? activePinnedMessage.text
+                              : "Pinned message"}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1 shrink-0">
+                        {pinnedMessages.length > 1 && (
+                          <div className="flex items-center gap-0.5 mr-1 border-r border-border/60 pr-1.5">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handlePrevPinned(selectedChat.id, pinnedMessages.length)
+                              }
+                              className="p-1 hover:bg-muted rounded-md text-muted-foreground hover:text-foreground transition"
+                              aria-label="Previous pinned message"
+                            >
+                              <ChevronLeft className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleNextPinned(selectedChat.id, pinnedMessages.length)
+                              }
+                              className="p-1 hover:bg-muted rounded-md text-muted-foreground hover:text-foreground transition"
+                              aria-label="Next pinned message"
+                            >
+                              <ChevronRight className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        )}
+
+                        {isAdmin && activePinnedMessage && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              togglePinMessage(selectedChat.id, activePinnedMessage.id)
+                            }
+                            className="p-1 text-muted-foreground hover:text-destructive hover:bg-muted/50 rounded-md transition"
+                            title="Unpin message"
+                            aria-label="Unpin message"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Collapsible message search bar */}
                   <MessageSearchBar
@@ -773,7 +967,11 @@ export default function ChatPage() {
                          <ChatMessageBubble 
                            key={message.id} 
                            message={message} 
-                           searchQuery={messageSearchQuery} 
+                           searchQuery={messageSearchQuery}
+                           isPinned={pinnedIds.includes(message.id)}
+                           isAdmin={isAdmin}
+                           onTogglePin={(msgId) => togglePinMessage(selectedChat.id, msgId)}
+                           isHighlighted={highlightedMessageId === message.id}
                          />
                        ))}
                    </div>
