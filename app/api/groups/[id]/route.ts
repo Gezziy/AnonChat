@@ -18,10 +18,18 @@ import {
   verifyWalletAuthorization,
 } from "@/lib/auth/wallet-authorization";
 import { auditLog } from "@/lib/auth/signed-message-middleware";
+import {
+  requiresMultisigApproval,
+  isMultisigOwner,
+  getProposalWithApprovals,
+  markProposalExecuted,
+} from "@/lib/groups/multisig";
 
 type DeleteGroupBody = {
   walletAddress?: string;
   signature?: string;
+  /** When multisig is enabled, callers must supply an approved proposalId */
+  proposalId?: string;
 };
 
 export async function DELETE(
@@ -109,6 +117,56 @@ export async function DELETE(
       );
     }
 
+    // ── Multisig gate ─────────────────────────────────────────────────────────
+    const multisigConfig = await requiresMultisigApproval(supabase, groupId);
+    if (multisigConfig) {
+      const { proposalId } = body;
+      if (!proposalId) {
+        return NextResponse.json(
+          {
+            error:
+              "This group requires multi-signature approval to delete. " +
+              "Create a proposal via POST /api/groups/:id/multisig/propose and include the " +
+              "approved proposalId in this request body.",
+            multisigRequired: true,
+            requiredApprovals: multisigConfig.requiredApprovals,
+          },
+          { status: 403 },
+        );
+      }
+
+      // Verify the proposal is approved and targets this action
+      const proposal = await getProposalWithApprovals(supabase, proposalId, groupId);
+      if (!proposal) {
+        return NextResponse.json({ error: "Proposal not found" }, { status: 404 });
+      }
+      if (proposal.actionType !== "delete_group") {
+        return NextResponse.json(
+          { error: "Proposal action type does not match delete_group" },
+          { status: 400 },
+        );
+      }
+      if (proposal.status !== "approved") {
+        return NextResponse.json(
+          {
+            error: `Proposal is not yet approved (status: ${proposal.status}). ` +
+              `${proposal.requiredApprovals - proposal.approvalCount} more approval(s) needed.`,
+            proposal,
+          },
+          { status: 403 },
+        );
+      }
+      if (new Date(proposal.expiresAt) < new Date()) {
+        return NextResponse.json({ error: "Proposal has expired" }, { status: 410 });
+      }
+    } else if (group.created_by !== user.id) {
+      // Single-owner path already checked above; this branch is unreachable but kept for safety
+      return NextResponse.json(
+        { error: "Forbidden. Only the group owner can delete this group." },
+        { status: 403 },
+      );
+    }
+
     const { data: rpcData, error: rpcError } = await supabase
       .rpc("delete_room_as_owner", { p_room_id: groupId })
       .maybeSingle();
@@ -136,6 +194,13 @@ export async function DELETE(
       groupName: group.name,
       deletedCounts: rpcData,
     });
+
+    // Mark the multisig proposal as executed if one was used
+    if (body.proposalId) {
+      await markProposalExecuted(supabase, body.proposalId).catch((e) =>
+        console.warn("[delete-group] failed to mark proposal executed:", e),
+      );
+    }
 
     console.info(`[delete-group] Group ${groupId} deleted by user ${user.id}`);
 

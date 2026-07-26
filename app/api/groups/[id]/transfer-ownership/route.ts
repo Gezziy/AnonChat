@@ -45,6 +45,11 @@ import {
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { requireGroupOwner } from "@/lib/middleware/group-ownership"
 import { notifyOwnershipTransferred } from "@/lib/notifications/service"
+import {
+  requiresMultisigApproval,
+  getProposalWithApprovals,
+  markProposalExecuted,
+} from "@/lib/groups/multisig"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -52,6 +57,8 @@ type TransferOwnershipBody = {
   newOwnerWalletAddress?: string
   walletAddress?: string
   signature?: string
+  /** When multisig is enabled, supply an approved proposalId to authorise the transfer */
+  proposalId?: string
 }
 
 type RpcTransferResult = {
@@ -200,6 +207,57 @@ export async function POST(
         { error: "Forbidden. Only the current group owner can transfer ownership." },
         { status: 403 }
       )
+    }
+
+    // ── Multisig gate ─────────────────────────────────────────────────────────
+    const multisigConfig = await requiresMultisigApproval(supabase, groupId)
+    if (multisigConfig) {
+      const { proposalId } = body
+      if (!proposalId) {
+        return NextResponse.json(
+          {
+            error:
+              "This group requires multi-signature approval to transfer ownership. " +
+              "Create a proposal via POST /api/groups/:id/multisig/propose and include the " +
+              "approved proposalId in this request body.",
+            multisigRequired: true,
+            requiredApprovals: multisigConfig.requiredApprovals,
+          },
+          { status: 403 },
+        )
+      }
+
+      const proposal = await getProposalWithApprovals(supabase, proposalId, groupId)
+      if (!proposal) {
+        return NextResponse.json({ error: "Proposal not found" }, { status: 404 })
+      }
+      if (proposal.actionType !== "transfer_ownership") {
+        return NextResponse.json(
+          { error: "Proposal action type does not match transfer_ownership" },
+          { status: 400 },
+        )
+      }
+      if (proposal.status !== "approved") {
+        return NextResponse.json(
+          {
+            error: `Proposal is not yet approved (status: ${proposal.status}). ` +
+              `${proposal.requiredApprovals - proposal.approvalCount} more approval(s) needed.`,
+            proposal,
+          },
+          { status: 403 },
+        )
+      }
+      if (new Date(proposal.expiresAt) < new Date()) {
+        return NextResponse.json({ error: "Proposal has expired" }, { status: 410 })
+      }
+      // Validate the newOwnerWallet matches the proposal payload
+      const payloadWallet = proposal.actionPayload?.newOwnerWallet
+      if (payloadWallet && payloadWallet !== newOwnerWalletAddress) {
+        return NextResponse.json(
+          { error: "newOwnerWalletAddress does not match the approved proposal payload" },
+          { status: 400 },
+        )
+      }
     }
 
     // ── 7. Resolve the new owner's user ID from their wallet address ──────────
@@ -389,6 +447,13 @@ export async function POST(
       newOwnerWalletAddress,
       transferLogId: result?.transfer_log_id ?? null,
     })
+
+    // Mark the multisig proposal as executed if one was used
+    if (body.proposalId) {
+      await markProposalExecuted(supabase, body.proposalId).catch((e) =>
+        console.warn("[transfer-ownership] failed to mark proposal executed:", e),
+      )
+    }
 
     console.info(
       `[transfer-ownership] Group ${groupId} ownership transferred from user ${user.id} to user ${newOwnerId}`

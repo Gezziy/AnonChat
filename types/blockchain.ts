@@ -91,6 +91,112 @@ export interface GroupVerificationRecord {
   created_at?: string;
 }
 
+// ── Multi-signature ownership types ──────────────────────────────────────────
+
+export type MultisigActionType =
+  | "delete_group"
+  | "transfer_ownership"
+  | "remove_member"
+  | "regenerate_invite"
+  | "update_multisig_owners";
+
+export type MultisigProposalStatus =
+  | "pending"
+  | "approved"
+  | "executed"
+  | "rejected"
+  | "expired";
+
+export interface MultisigOwner {
+  id: string;
+  groupId: string;
+  walletAddress: string;
+  userId: string | null;
+  addedBy: string | null;
+  addedAt: string;
+  removedAt: string | null;
+}
+
+export interface MultisigConfig {
+  groupId: string;
+  requiredApprovals: number;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MultisigProposal {
+  id: string;
+  groupId: string;
+  actionType: MultisigActionType;
+  /** Arbitrary payload describing the action (e.g. { newOwnerWallet: "G..." }) */
+  actionPayload: Record<string, unknown>;
+  proposedBy: string;
+  proposerWallet: string;
+  status: MultisigProposalStatus;
+  requiredApprovals: number;
+  approvalCount: number;
+  approvals: MultisigApproval[];
+  expiresAt: string;
+  executedAt: string | null;
+  createdAt: string;
+}
+
+export interface MultisigApproval {
+  id: string;
+  proposalId: string;
+  approverUserId: string;
+  approverWallet: string;
+  approvedAt: string;
+}
+
+export interface ProposeMultisigActionRequest {
+  walletAddress: string;
+  signature: string;
+  actionType: MultisigActionType;
+  actionPayload?: Record<string, unknown>;
+}
+
+export interface ApproveMultisigProposalRequest {
+  walletAddress: string;
+  signature: string;
+}
+
+export interface EnableMultisigRequest {
+  walletAddress: string;
+  signature: string;
+  requiredApprovals: number;
+}
+
+export interface AddMultisigOwnerRequest {
+  walletAddress: string;
+  signature: string;
+  newOwnerWallet: string;
+}
+
+export interface RemoveMultisigOwnerRequest {
+  walletAddress: string;
+  signature: string;
+  targetWallet: string;
+}
+
+export interface MultisigOwnersResponse {
+  groupId: string;
+  multisigEnabled: boolean;
+  requiredApprovals: number;
+  ownerCount: number;
+  owners: MultisigOwner[];
+  config: MultisigConfig | null;
+}
+
+export interface MultisigProposalsResponse {
+  groupId: string;
+  proposals: MultisigProposal[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
 export interface GroupCreationResponse {
   room: {
     id: string;
