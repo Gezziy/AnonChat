@@ -103,6 +103,7 @@ export default function ChatPage() {
   const [isLoadingMessagesByRoom, setIsLoadingMessagesByRoom] = useState<Record<string, boolean>>({});
   const loadingRef = useRef<Record<string, boolean>>({});
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const transformToChatMessage = useCallback(
     (message: DBMessage): ChatMessage => ({
@@ -169,10 +170,8 @@ export default function ChatPage() {
     setIsLoadingRooms(true);
     try {
       const response = await fetch("/api/rooms");
-      
-      // Handle non-200 responses gracefully (like the 500 error you're getting)
+
       if (!response.ok) {
-        console.warn(`Rooms API returned status ${response.status}. Using local preview mode.`);
         setChats([]);
         setSelectedChatId(null);
         return;
@@ -180,7 +179,6 @@ export default function ChatPage() {
 
       const data = await response.json();
       if (data.error) {
-        console.warn("Rooms API returned a custom error:", data.error);
         setChats([]);
         setSelectedChatId(null);
         return;
@@ -206,9 +204,7 @@ export default function ChatPage() {
       setSelectedChatId(
         (currentSelected) => currentSelected || previews[0]?.id || null,
       );
-    } catch (error) {
-      // This catches the 'TypeError: fetch failed' from your dummy URL completely!
-      console.warn("Network fetch to rooms failed. Falling back to empty state for preview.");
+    } catch {
       setChats([]);
       setSelectedChatId(null);
     } finally {
@@ -358,7 +354,6 @@ export default function ChatPage() {
     const trimmedMessage = inputMessage.trim();
     if (!trimmedMessage || !selectedChatId) return;
 
-    // Check for offline status immediately
     if (!window.navigator.onLine) {
       handleAppError(new Error("network"), "NETWORK");
       return;
@@ -424,10 +419,8 @@ export default function ChatPage() {
         ),
       );
     } catch (error: any) {
-      // Trigger Toast Notification
       handleAppError(error, "SEND_MESSAGE");
 
-      // Revert optimistic update
       setMessagesByChat((prev) => ({
         ...prev,
         [selectedChatId]: (prev[selectedChatId] || []).filter(
@@ -441,6 +434,11 @@ export default function ChatPage() {
 
   const handleComposerKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault();
+        void handleSendMessage();
+        return;
+      }
       if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
         void handleSendMessage();
@@ -448,6 +446,30 @@ export default function ChatPage() {
     },
     [handleSendMessage],
   );
+
+  // Global Keyboard Shortcut Listener
+  useEffect(() => {
+    const handleGlobalKeyDown = (event: KeyboardEvent) => {
+      // Ctrl/Cmd + K -> Focus chat search
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+        return;
+      }
+
+      // Esc -> Close active modals, dropdowns, or sidebars
+      if (event.key === "Escape") {
+        if (roomMembersOpen) {
+          setRoomMembersOpen(false);
+        } else if (mobileSidebarOpen) {
+          setMobileSidebarOpen(false);
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+  }, [roomMembersOpen, mobileSidebarOpen]);
 
   const filteredChats = useMemo(() => {
     if (!query.trim()) return chats;
@@ -515,9 +537,11 @@ export default function ChatPage() {
                   <div className="relative">
                     <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
                     <input
+                      ref={searchInputRef}
                       value={query}
                       onChange={(event) => setQuery(event.target.value)}
-                      placeholder="Search groups or messages"
+                      placeholder="Search groups or messages (Ctrl+K)"
+                      title="Search (Ctrl+K)"
                       className="w-full rounded-xl border border-border/80 bg-background/70 pl-9 pr-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
                     />
                   </div>
@@ -620,7 +644,6 @@ export default function ChatPage() {
                 activeMobileTab === "chats" && "hidden md:flex",
               )}
             >
-              {/* INTEGRATED WELCOME STATE HERE */}
               {!selectedChat && (
                 <ChatWelcomeState
                   onCreateGroup={() => console.log("Open Create Group Overlay Trigger")}
@@ -779,7 +802,8 @@ export default function ChatPage() {
                         }
                         onKeyDown={handleComposerKeyDown}
                         rows={1}
-                        placeholder="Type a message"
+                        placeholder="Type a message (Ctrl+Enter to send)"
+                        title="Type a message (Ctrl+Enter to send)"
                         className="flex-1 min-h-10 max-h-32 resize-none rounded-2xl border border-border/80 bg-background px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/30"
                       />
 

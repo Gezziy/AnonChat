@@ -32,7 +32,9 @@ type InviteBody = {
   walletAddress?: string
   signature?: string
   expires_in?: number
+  expiresAt?: number
   max_uses?: number
+  maxUsage?: number
 }
 
 export async function POST(
@@ -110,30 +112,35 @@ export async function POST(
       )
     }
 
-    const { expires_in, max_uses } = body
+    const expiresIn = body.expires_in ?? body.expiresAt
+    const maxUses = body.max_uses ?? body.maxUsage
 
-    if (max_uses !== undefined && (!Number.isInteger(max_uses) || max_uses < 1)) {
+    if (maxUses !== undefined && (!Number.isInteger(maxUses) || maxUses < 1)) {
       return NextResponse.json(
         { error: "max_uses must be a positive integer" },
         { status: 400 }
       )
     }
 
-    if (expires_in !== undefined && (!Number.isInteger(expires_in) || expires_in < 1)) {
+    if (expiresIn !== undefined && (!Number.isInteger(expiresIn) || expiresIn < 1)) {
       return NextResponse.json(
         { error: "expires_in must be a positive integer (seconds)" },
         { status: 400 }
       )
     }
 
-    // Invalidate existing invite codes before generating a new one
-    const { error: deleteError } = await supabase
+    // Mark existing invite codes inactive before generating a new one.
+    const { error: invalidateError } = await supabase
       .from("invites")
-      .delete()
+      .update({
+        is_active: false,
+        deactivated_at: new Date().toISOString(),
+        deactivation_reason: "regenerated",
+      })
       .eq("room_id", groupId)
 
-    if (deleteError) {
-      console.error("[groups/invite] failed to invalidate old invites:", deleteError)
+    if (invalidateError) {
+      console.error("[groups/invite] failed to invalidate old invites:", invalidateError)
       return NextResponse.json(
         { error: "Failed to regenerate invite code" },
         { status: 500 }
@@ -141,7 +148,7 @@ export async function POST(
     }
 
     const code = generateInviteCode()
-    const expiresAt = buildExpiresAt(expires_in)
+    const expiresAt = buildExpiresAt(expiresIn)
 
     const { data: invite, error: insertError } = await supabase
       .from("invites")
@@ -150,8 +157,9 @@ export async function POST(
         room_id: groupId,
         created_by: user.id,
         expires_at: expiresAt,
-        max_uses: max_uses ?? null,
+        max_uses: maxUses ?? null,
         use_count: 0,
+        is_active: true,
       })
       .select("code, room_id, created_at, expires_at, max_uses")
       .single()

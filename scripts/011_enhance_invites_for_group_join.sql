@@ -3,7 +3,10 @@
 
 alter table public.invites
   add column if not exists max_uses integer,
-  add column if not exists use_count integer not null default 0;
+  add column if not exists use_count integer not null default 0,
+  add column if not exists is_active boolean not null default true,
+  add column if not exists deactivated_at timestamp with time zone,
+  add column if not exists deactivation_reason text;
 
 -- Allow any authenticated user to read an invite by code (needed for join validation)
 create policy "Authenticated users can read invites by code"
