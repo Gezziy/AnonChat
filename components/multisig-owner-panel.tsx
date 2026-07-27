@@ -285,7 +285,7 @@ export function MultisigOwnerPanel({
       );
       const proposalHashBuffer = await crypto.subtle.digest(
         "SHA-256",
-        new TextEncoder().encode(hashInput),
+        new Uint8Array(new TextEncoder().encode(hashInput)) as Uint8Array<ArrayBuffer>,
       );
       const proposalHash = Array.from(new Uint8Array(proposalHashBuffer))
         .map((b) => b.toString(16).padStart(2, "0"))
