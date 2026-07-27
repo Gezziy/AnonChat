@@ -5,6 +5,7 @@ import { Analytics } from "@vercel/analytics/next";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ChatThemeProvider } from "@/lib/chat-theme";
 import { WebSocketProvider } from "@/lib/websocket/context"
+import { ConnectionStatusBanner } from "@/components/ConnectionStatusBanner"
 
 // installed the proper toast module
 import { Toaster } from "react-hot-toast";
@@ -54,6 +55,7 @@ export default function RootLayout({
         >
           <ChatThemeProvider>
             <WebSocketProvider>
+              <ConnectionStatusBanner />
               {children}
             </WebSocketProvider>
           </ChatThemeProvider>
