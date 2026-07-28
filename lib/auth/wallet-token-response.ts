@@ -11,11 +11,13 @@ export async function buildWalletAuthResponse(
   walletAddress: string,
   body: Record<string, unknown>,
   status: number,
+  sigVerifiedAt?: number,
 ): Promise<NextResponse> {
   const jti = createRefreshTokenId();
+  const sigTime = sigVerifiedAt ?? Math.floor(Date.now() / 1000);
   const [accessToken, refreshToken] = await Promise.all([
-    signWalletAccessToken(walletAddress),
-    signWalletRefreshToken(walletAddress, jti),
+    signWalletAccessToken(walletAddress, sigTime),
+    signWalletRefreshToken(walletAddress, jti, sigTime),
   ]);
 
   await storeRefreshToken(jti, walletAddress);

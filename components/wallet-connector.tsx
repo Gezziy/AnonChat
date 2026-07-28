@@ -4,6 +4,8 @@ import {
   disconnect,
   getPublicKey,
   signMessage,
+  detectWalletNetwork,
+  getExpectedNetwork,
 } from "@/app/stellar-wallet-kit";
 import { useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
@@ -11,6 +13,7 @@ import { createClient } from "@/lib/supabase/client";
 import { WalletAddress } from "@/components/wallet-address";
 import { ProfileDrawer } from "@/components/profile-drawer";
 import { WalletSelectionModal } from "@/components/wallet-selection-modal";
+import { WalletNetworkWarning } from "@/components/wallet-network-warning";
 import { handleAppError } from "@/lib/error-handler";
 
 export default function ConnectWallet() {
@@ -96,13 +99,31 @@ export default function ConnectWallet() {
     setIsModalOpen(true);
   }
 
+  async function handleWalletConnected(address: string) {
+    const detected = await detectWalletNetwork();
+    const expected = getExpectedNetwork();
+
+    if (detected !== "unknown" && detected !== expected) {
+      const expectedLabel = expected === "testnet" ? "Testnet" : "Mainnet";
+      const walletLabel = detected === "testnet" ? "Testnet" : "Mainnet";
+      handleAppError(
+        new Error(`Wallet is on ${walletLabel}. Please switch to ${expectedLabel} in your wallet extension.`),
+        "NETWORK_MISMATCH"
+      );
+      await disconnect();
+      setPublicKey(null);
+      return;
+    }
+
+    await authenticateWithWallet(address);
+  }
+
   async function handleConnectSuccess() {
     try {
       const key = await getPublicKey();
       if (key) {
-        await authenticateWithWallet(key);
+        await handleWalletConnected(key);
       } else {
-        // Triggered if the wallet kit returns without a key
         handleAppError(new Error("No public key found"), "WALLET_CONNECT");
         setLoading(false);
       }
@@ -141,6 +162,14 @@ export default function ConnectWallet() {
       });
       if (!res.ok) {
         console.warn("[wallet-auth] session refresh failed:", res.status);
+        if (res.status === 401) {
+          const body = await res.json().catch(() => ({}));
+          if (body?.error?.toLowerCase().includes("session expired") || body?.error?.toLowerCase().includes("signature")) {
+            handleAppError(new Error("Session expired. Please re-authenticate."), "SESSION_EXPIRED");
+            await disconnect();
+            setPublicKey(null);
+          }
+        }
       }
     } catch (error) {
       console.error("[wallet-auth] session refresh error:", error);
@@ -175,6 +204,9 @@ export default function ConnectWallet() {
 
   return (
     <div id="connect-wrap" className="wrap" aria-live="polite">
+      {!loading && publicKey && (
+        <WalletNetworkWarning variant="inline" className="mb-2" />
+      )}
       {!loading && publicKey && (
         <ProfileDrawer publicKey={publicKey} onDisconnect={handleDisconnect}>
           <div

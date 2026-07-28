@@ -3,11 +3,12 @@
 import React, { useState, useEffect } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { X, Users, Loader2, Info } from "lucide-react";
-import { getPublicKey, connect } from "@/app/stellar-wallet-kit";
+import { getPublicKey, connect, detectWalletNetwork, getExpectedNetwork } from "@/app/stellar-wallet-kit";
 import { toast } from "react-hot-toast";
 import { trackActivity } from "@/lib/reputation";
 import { shortenWalletAddress } from "@/lib/utils";
 import { WalletAddress } from "@/components/wallet-address";
+import { handleAppError } from "@/lib/error-handler";
 
 export function CreateGroupModal() {
   const [isOpen, setIsOpen] = useState(false);
@@ -67,6 +68,14 @@ export function CreateGroupModal() {
 
     if (!publicKey) {
       toast.error("Please connect your wallet first");
+      return;
+    }
+
+    const walletNet = await detectWalletNetwork();
+    const expectedNet = getExpectedNetwork();
+    if (walletNet !== "unknown" && walletNet !== expectedNet) {
+      const label = expectedNet === "testnet" ? "Testnet" : "Mainnet";
+      handleAppError(new Error(`Switch wallet to ${label} to create groups`), "NETWORK_MISMATCH");
       return;
     }
 

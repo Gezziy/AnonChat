@@ -12,15 +12,28 @@ export const WALLET_ADDRESS_HEADER = "x-wallet-address";
 const ACCESS_TOKEN_TTL_SEC = 15 * 60; // 15 minutes
 const REFRESH_TOKEN_TTL_SEC = 7 * 24 * 60 * 60; // 7 days
 
+export const DEFAULT_SIGNATURE_MAX_AGE_SEC = 24 * 60 * 60; // 24 hours
+
+export function getSignatureMaxAgeSec(): number {
+  const env = process.env.WALLET_SIGNATURE_MAX_AGE_SECONDS;
+  if (env) {
+    const parsed = parseInt(env, 10);
+    if (!isNaN(parsed) && parsed > 0) return parsed;
+  }
+  return DEFAULT_SIGNATURE_MAX_AGE_SEC;
+}
+
 export interface WalletAccessClaims extends JWTPayload {
   walletAddress: string;
   type: "access";
+  sigVerifiedAt: number;
 }
 
 export interface WalletRefreshClaims extends JWTPayload {
   walletAddress: string;
   type: "refresh";
   jti: string;
+  sigVerifiedAt: number;
 }
 
 function getJwtSecret(): Uint8Array {
@@ -38,8 +51,9 @@ export function getRefreshTokenMaxAgeSec(): number {
 
 export async function signWalletAccessToken(
   walletAddress: string,
+  sigVerifiedAt: number,
 ): Promise<string> {
-  return new SignJWT({ walletAddress, type: "access" })
+  return new SignJWT({ walletAddress, type: "access", sigVerifiedAt })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(`${ACCESS_TOKEN_TTL_SEC}s`)
@@ -49,8 +63,9 @@ export async function signWalletAccessToken(
 export async function signWalletRefreshToken(
   walletAddress: string,
   jti: string,
+  sigVerifiedAt: number,
 ): Promise<string> {
-  return new SignJWT({ walletAddress, type: "refresh", jti })
+  return new SignJWT({ walletAddress, type: "refresh", jti, sigVerifiedAt })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(`${REFRESH_TOKEN_TTL_SEC}s`)

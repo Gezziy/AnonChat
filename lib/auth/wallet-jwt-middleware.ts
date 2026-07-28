@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   verifyWalletAccessToken,
+  getSignatureMaxAgeSec,
   WALLET_ACCESS_COOKIE,
   WALLET_ADDRESS_HEADER,
 } from "@/lib/auth/wallet-jwt";
@@ -75,6 +76,17 @@ export async function enforceWalletApiAuth(
       ok: false,
       response: NextResponse.json(
         { error: "Unauthorized. Access token is invalid or expired." },
+        { status: 401 },
+      ),
+    };
+  }
+
+  const sigAgeSec = Math.floor(Date.now() / 1000) - claims.sigVerifiedAt;
+  if (sigAgeSec > getSignatureMaxAgeSec()) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { error: "Session expired. Wallet signature is too old. Please re-authenticate." },
         { status: 401 },
       ),
     };

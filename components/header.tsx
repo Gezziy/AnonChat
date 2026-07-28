@@ -8,6 +8,7 @@ import { ThemeSettingsModal } from "./theme-settings-modal"
 import { CreateGroupModal } from "./create-group-modal"
 import { JoinGroupModal } from "./join-group-modal"
 import { NotificationPanel } from "./NotificationPanel"
+import { WalletNetworkWarning } from "./wallet-network-warning"
 
 export function Header() {
   const [isOpen, setIsOpen] = useState(false)
@@ -69,6 +70,8 @@ export function Header() {
           {isOpen ? <X size={24} /> : <Menu size={24} />}
         </button>
       </nav>
+
+      <WalletNetworkWarning variant="inline" className="mx-4 mb-2" />
 
       {/* Mobile Navigation */}
       {isOpen && (
