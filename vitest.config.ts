@@ -9,6 +9,7 @@ export default defineConfig({
       "lib/blockchain/transaction-verification.test.ts",
       "lib/utils/stellar-address.test.ts",
       "components/GroupVerificationBadge.test.tsx",
+      "tests/group-roles.test.ts",
     ],
     globals: false,
   },
