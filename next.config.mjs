@@ -3,6 +3,7 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  serverExternalPackages: ["sodium-native", "require-addon"],
   webpack: (config, { isServer }) => {
     if (!isServer) {
       config.resolve.fallback = {

@@ -62,7 +62,7 @@ export async function detectWalletNetwork(): Promise<DetectedNetwork> {
   } catch (error) {
     logBlockchainOperation("warn", "Wallet network detection failed", {
       walletId,
-      error: String(error),
+      error: { type: "NetworkDetectionError", message: error instanceof Error ? error.message : String(error) },
     });
   }
 
@@ -91,7 +91,7 @@ export async function detectNetworkForWallet(walletId: string): Promise<Detected
   } catch (error) {
     logBlockchainOperation("warn", "Wallet network detection failed", {
       walletId,
-      error: String(error),
+      error: { type: "NetworkDetectionError", message: error instanceof Error ? error.message : String(error) },
     });
   }
 
