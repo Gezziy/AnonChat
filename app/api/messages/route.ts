@@ -194,7 +194,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { room_id, content, is_ephemeral = false } = body
+    const { room_id, content, is_ephemeral = false, reply_to_id = null } = body
 
     if (!room_id || !content) {
       return NextResponse.json({ error: "room_id and content are required" }, { status: 400 })
@@ -264,6 +264,10 @@ export async function POST(request: NextRequest) {
       content,
       is_encrypted: false,
       status: "sent",
+    }
+
+    if (reply_to_id) {
+      messageData.reply_to_id = reply_to_id
     }
 
     // Handle ephemeral messages
