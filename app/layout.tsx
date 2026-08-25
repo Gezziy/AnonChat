@@ -11,6 +11,7 @@ import { ConnectionStatusBanner } from "@/components/ConnectionStatusBanner"
 import { Toaster } from "react-hot-toast";
 import "./globals.css";
 
+
 const _geist = Geist({ subsets: ["latin"] });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
 
