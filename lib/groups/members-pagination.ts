@@ -198,19 +198,12 @@ function compareMembers(
   sortOrder: SortOrder,
 ): number {
   const isAsc = sortOrder === "asc";
-  let comparison = 0;
-
-  if (sortBy === "role") {
-    const pA = ROLE_PRIORITY[a.role] || 1;
-    const pB = ROLE_PRIORITY[b.role] || 1;
-    comparison = pA - pB;
-  } else if (sortBy === "username") {
-    const nameA = buildSortValue(a, "username");
-    const nameB = buildSortValue(b, "username");
-    comparison = nameA.localeCompare(nameB);
-  } else {
-    comparison = a.joined_at.localeCompare(b.joined_at);
-  }
+  const comparison =
+    sortBy === "role"
+      ? (ROLE_PRIORITY[a.role] || 1) - (ROLE_PRIORITY[b.role] || 1)
+      : sortBy === "username"
+        ? buildSortValue(a, "username").localeCompare(buildSortValue(b, "username"))
+        : a.joined_at.localeCompare(b.joined_at);
 
   if (comparison !== 0) {
     return isAsc ? comparison : -comparison;
@@ -292,24 +285,6 @@ export function sortAndPaginateMembers(
     prevCursor,
     effectivePage,
   };
-}
-
-function applyCursorFilter(
-  query: any,
-  cursor: string | undefined,
-  sortBy: "joined_at" | "role" | "username",
-  sortOrder: SortOrder,
-) {
-  if (!cursor) return query;
-  const decoded = decodeCursor(cursor);
-  if (!decoded) return query;
-
-  const comparator = sortOrder === "asc" ? "gt" : "lt";
-  const secondaryComparator = sortOrder === "asc" ? "gt" : "lt";
-  const sortColumn = sortBy === "joined_at" ? "joined_at" : sortBy === "role" ? "joined_at" : "joined_at";
-  return query.or(
-    `${sortColumn}.${comparator}.${decoded.sortValue},and(${sortColumn}.eq.${decoded.sortValue},user_id.${secondaryComparator}.${decoded.userId})`,
-  );
 }
 
 /**
