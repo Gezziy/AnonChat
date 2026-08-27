@@ -13,6 +13,7 @@ export default defineConfig({
       "components/MessageItem.test.tsx",
       "src/components/MessageInput.test.tsx",
       "tests/group-roles.test.ts",
+      "tests/wallet-ownership-proof.test.ts",
     ],
     globals: false,
   },
