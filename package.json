@@ -18,6 +18,7 @@
     "test:sensitive-actions": "node scripts/test-sensitive-actions-api.mjs",
     "test:vote-remove": "node scripts/test-vote-remove-api.mjs",
     "test:ephemeral": "node scripts/test-ephemeral-cleanup.mjs",
+    "test:stellar-history": "node --test scripts/test-stellar-history.mjs",
     "start": "next start",
     "cleanup:worker": "node scripts/ephemeral-cleanup-worker.js",
     "cleanup:trigger": "node scripts/trigger-cleanup.mjs"
