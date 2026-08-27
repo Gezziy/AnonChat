@@ -1,6 +1,7 @@
 import WebSocket, { WebSocketServer } from "ws"
 import http from "http"
 import { randomUUID } from "crypto"
+import { validateMessage, ValidationErrorType } from "../middleware/message-validation"
 
 // Type definitions
 interface User {
@@ -376,6 +377,27 @@ export function createWebSocketServer(port: number = 3001) {
               break
             }
 
+            // Validate message content
+            const validation = validateMessage(
+              { content: message.payload.content, roomId: msgRoomId },
+              'websocket'
+            )
+
+            if (!validation.isValid) {
+              ws.send(
+                JSON.stringify({
+                  type: "error",
+                  payload: {
+                    message: validation.error?.message,
+                    type: validation.error?.type,
+                    details: validation.error?.details,
+                  },
+                  timestamp: Date.now(),
+                }),
+              )
+              break
+            }
+
             const broadcastMessage = {
               type: "message",
               payload: {
@@ -384,7 +406,7 @@ export function createWebSocketServer(port: number = 3001) {
                 userId: msgUserId,
                 displayName: connection.user?.displayName,
                 avatarUrl: connection.user?.avatarUrl,
-                content: message.payload.content,
+                content: validation.sanitized?.content || message.payload.content,
                 createdAt: Date.now(),
               },
               timestamp: Date.now(),
@@ -429,13 +451,34 @@ export function createWebSocketServer(port: number = 3001) {
               break
             }
 
+            // Validate message content for edits
+            const validation = validateMessage(
+              { content: editContent, id: editMessageId, roomId: editRoomId },
+              'websocket'
+            )
+
+            if (!validation.isValid) {
+              ws.send(
+                JSON.stringify({
+                  type: "error",
+                  payload: {
+                    message: validation.error?.message,
+                    type: validation.error?.type,
+                    details: validation.error?.details,
+                  },
+                  timestamp: Date.now(),
+                }),
+              )
+              break
+            }
+
             broadcastToRoom(editRoomId, {
               type: "message_edit",
               payload: {
                 messageId: editMessageId,
                 userId: editAuthorId,
                 roomId: editRoomId,
-                content: editContent,
+                content: validation.sanitized?.content || editContent,
                 editedAt: Date.now(),
               },
               timestamp: Date.now(),

@@ -8,6 +8,7 @@ import {
 } from "@/lib/wallet-message-rate-limit"
 import { getRoomTTL } from "@/lib/ephemeral-cleanup"
 import { type NextRequest, NextResponse } from "next/server"
+import { validateMessage, ValidationErrorType } from "@/lib/middleware/message-validation"
 
 export async function GET(request: NextRequest) {
   try {
@@ -127,6 +128,23 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "id and content are required" }, { status: 400 })
     }
 
+    // Validate message content for edits
+    const validation = validateMessage({ content, id }, 'http')
+    if (!validation.isValid) {
+      const statusCode = validation.error?.type === ValidationErrorType.MESSAGE_TOO_LONG ? 413 : 400
+      return NextResponse.json(
+        {
+          error: validation.error?.message,
+          type: validation.error?.type,
+          details: validation.error?.details,
+        },
+        { status: statusCode }
+      )
+    }
+
+    // Use sanitized content
+    const sanitizedContent = validation.sanitized?.content || content
+
     const windowMinutes = Number(editWindowMinutes ?? process.env.MESSAGE_EDIT_WINDOW_MINUTES ?? 5)
     const windowMs = windowMinutes * 60 * 1000
 
@@ -164,7 +182,7 @@ export async function PUT(request: NextRequest) {
     const { data, error } = await supabase
       .from("messages")
       .update({
-        content,
+        content: sanitizedContent,
         edited_at: new Date(now).toISOString(),
       })
       .eq("id", id)
@@ -199,6 +217,23 @@ export async function POST(request: NextRequest) {
     if (!room_id || !content) {
       return NextResponse.json({ error: "room_id and content are required" }, { status: 400 })
     }
+
+    // Validate message content
+    const validation = validateMessage({ content, roomId: room_id }, 'http')
+    if (!validation.isValid) {
+      const statusCode = validation.error?.type === ValidationErrorType.MESSAGE_TOO_LONG ? 413 : 400
+      return NextResponse.json(
+        {
+          error: validation.error?.message,
+          type: validation.error?.type,
+          details: validation.error?.details,
+        },
+        { status: statusCode }
+      )
+    }
+
+    // Use sanitized content
+    const sanitizedContent = validation.sanitized?.content || content
 
     const walletKey = getWalletRateLimitKey(user)
     const policy = resolveWalletMessageRatePolicy(walletKey, room_id)
@@ -261,7 +296,7 @@ export async function POST(request: NextRequest) {
     const messageData: any = {
       user_id: user.id,
       room_id,
-      content,
+      content: sanitizedContent,
       is_encrypted: false,
       status: "sent",
     }
